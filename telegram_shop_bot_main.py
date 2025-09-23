@@ -50,6 +50,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
+from aiogram.types import WebAppInfo
 from aiogram.client.default import DefaultBotProperties   # <= ajoute ça
 
 from reportlab.lib.pagesizes import A4
@@ -389,6 +390,17 @@ async def cmd_add_product(m: Message):
         await m.answer(f"✅ Produit ajouté: {name} ({price}€, stock {stock})")
     except Exception:
         await m.answer("Format: /add_product Nom|12.5|10")
+@dp.message(Command("shop"))
+async def open_shop(m: Message):
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="🛍️ Ouvrir la boutique",
+            web_app=WebAppInfo(
+                url="https://bossnaboss212.github.io/dernier-occase/webapp/index.html"
+            )
+        )
+    ]])
+    await m.answer("Ouvre la boutique mini-app :", reply_markup=kb)
 
 @dp.message(Command("set_role"))
 async def cmd_set_role(m: Message):
