@@ -352,13 +352,14 @@ def main_menu_kb(role: str) -> InlineKeyboardMarkup:
 @dp.message(CommandStart())
 async def start(m: Message):
     ensure_user(m.from_user.id)
-    role = get_role(m.from_user.id)
-    await m.answer(
-        "👋 Bienvenue dans la mini-boutique Telegram (paiement <b>espèces</b> uniquement).\n"
-        "Livraison : <b>Millau gratuite</b>. Hors Millau : "
-        "<b>20€ / 30€ / 50€</b> selon la distance. (>50 km : non couvert)",
-        reply_markup=main_menu_kb(role),
-    )
+   role_db = get_role(m.from_user.id)
+role = "admin" if m.from_user.id == OWNER_ID else role_db  # OWNER = admin
+await m.answer(
+    "👋 Bienvenue dans la mini-boutique Telegram (paiement <b>espèces</b> uniquement).\n"
+    "Livraison : <b>Millau gratuite</b>. Hors Millau : "
+    "<b>20€ / 30€ / 50€</b> selon la distance. (>50 km : non couvert)",
+    reply_markup=main_menu_kb(role),
+)
 
 @dp.message(Command("help"))
 async def help_cmd(m: Message):
@@ -384,6 +385,14 @@ async def ping_cmd(m: Message):
             )
     except Exception as e:
         await m.answer(f"⚠️ Erreur envoi canal: {e}")
+
+@dp.message(Command("whoami"))
+async def whoami(m: Message):
+    await m.answer(
+        f"ID: {m.from_user.id}\n"
+        f"Role DB: {get_role(m.from_user.id)}\n"
+        f"Owner: {m.from_user.id == OWNER_ID}"
+    )
 
 @dp.message(Command("add_product"))
 async def cmd_add_product(m: Message):
