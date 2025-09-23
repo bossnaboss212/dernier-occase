@@ -410,14 +410,20 @@ async def open_shop(m: Message):
 
 @dp.message(Command("set_role"))
 async def cmd_set_role(m: Message):
+    # Vérifie si l'émetteur est admin et correspond à l'OWNER_ID
     if get_role(m.from_user.id) != "admin" and m.from_user.id != OWNER_ID:
-        return await m.answer("⛔ Admin uniquement.")
+        return await m.answer("🚫 Admin uniquement.")
+
     try:
         _, uid, role = m.text.split()
         set_role(int(uid), role)
-        await m.answer("✅ Rôle mis à jour.")
+        await m.answer(f"✅ Rôle de l'utilisateur {uid} mis à jour en : {role}")
     except Exception:
-        await m.answer("Format: /set_role <user_id> <customer|staff|admin>")
+        await m.answer(
+            "Format correct :\n"
+            "`/set_role user_id customer|staff|admin`",
+            parse_mode="Markdown"
+        )
 
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel_handler(c: CallbackQuery):
