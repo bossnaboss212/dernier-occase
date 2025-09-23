@@ -50,6 +50,8 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
+from aiogram.client.default import DefaultBotProperties   # <= ajoute ça
+
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas as pdf_canvas
@@ -315,7 +317,7 @@ class Support(StatesGroup):
     waiting_text = State()
 
 # ---------- Bot ----------
-bot = Bot(BOT_TOKEN, parse_mode=ParseMode.HTML)
+bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 
 # ---------- Keyboards ----------
