@@ -324,6 +324,10 @@ dp = Dispatcher(storage=MemoryStorage())
 # ---------- Keyboards ----------
 def main_menu_kb(role: str) -> InlineKeyboardMarkup:
     buttons = [
+        [InlineKeyboardButton(
+            text="🛍️ Boutique",
+            web_app=WebAppInfo(url="https://bossnaboss212.github.io/dernier-occase/webapp/index.html")
+        )],
         [InlineKeyboardButton(text="🛒 Catalogue", callback_data="catalogue"),
          InlineKeyboardButton(text="🧺 Panier", callback_data="panier")],
         [InlineKeyboardButton(text="🚚 Commander (cash)", callback_data="checkout")],
@@ -332,15 +336,17 @@ def main_menu_kb(role: str) -> InlineKeyboardMarkup:
          InlineKeyboardButton(text="🧑‍💼 Postuler", callback_data="postuler")],
         [InlineKeyboardButton(text="🆘 Assistance", callback_data="support")],
     ]
+
+    # si staff ou admin → on ajoute le bouton gestion stock
     if role in ("staff", "admin"):
         buttons.append([InlineKeyboardButton(text="📦 Gestion stock", callback_data="admin_stock"),
                         InlineKeyboardButton(text="📈 Export CA", callback_data="export_ca")])
-    if role == "admin":
-        buttons.append([InlineKeyboardButton(text="🛠️ Admin", callback_data="admin_panel")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def back_home_kb(role: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Menu", callback_data="home")]])
+    # si admin → bouton admin spécial
+    if role == "admin":
+        buttons.append([InlineKeyboardButton(text="⚙️ Admin", callback_data="admin_panel")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ---------- Commands ----------
 @dp.message(CommandStart())
