@@ -419,6 +419,26 @@ async def cmd_set_role(m: Message):
     except Exception:
         await m.answer("Format: /set_role <user_id> <customer|staff|admin>")
 
+@dp.callback_query(F.data == "admin_panel")
+async def admin_panel_handler(c: CallbackQuery):
+    # sécurité : seulement l’admin (ou l’OWNER_ID)
+    if get_role(c.from_user.id) != "admin" and c.from_user.id != OWNER_ID:
+        return await c.answer("⛔ Accès réservé à l’admin", show_alert=True)
+
+    text = (
+        "⚙️ <b>Panneau Admin</b>\n\n"
+        "Commandes utiles :\n"
+        "• /add_product Nom|Prix|Stock|PhotoURL\n"
+        "• /set_price id|Prix\n"
+        "• /set_stock id|Stock\n"
+        "• /set_photo id|URL\n"
+        "• /export_ca  (CSV + PDF)\n"
+        "• /assign CODE courier_user_id\n"
+        "• /delivered CODE  (déduit stock + CA)\n"
+    )
+    await c.message.answer(text)
+    await c.answer()
+
 @dp.message(Command("fees"))
 async def cmd_fees(m: Message):
     f = get_fees()
