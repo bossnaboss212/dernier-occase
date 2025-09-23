@@ -1,1 +1,0 @@
-worker: python -u telegram_shop_bot_main.py
