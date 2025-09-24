@@ -49,9 +49,11 @@ if not BOT_TOKEN:
 # ---------- Pricing / Discount ----------
 MILLAU_CITY = "Millau"
 DEFAULT_TIERED_FEES = [(20, 20.0), (30, 30.0), (50, 50.0)]  # >50 km : non couvert (bloqué)
-GLOBAL_DISCOUNT_ACTIVE = True
-GLOBAL_DISCOUNT_EUR = 10.0
-PROMO_CODE = "TRESORERIE10"
+# --------- DISCOUNT SETTINGS ---------
+GLOBAL_DISCOUNT_ACTIVE = False      # Désactive la remise globale
+GLOBAL_DISCOUNT_EUR = 10.0          # Montant prévu (reste défini mais inactif)
+PROMO_CODE = "TRESORERIE10"         # Code promo optionnel
+"
 
 # ---------- DB Schema ----------
 SCHEMA_SQL = """
@@ -632,10 +634,20 @@ async def handle_webapp(m: Message):
         distance_km = float(data.get("distance_km", 0) or 0)
         promo_code = (data.get("promo") or "").strip().upper()
 
-        subtotal = sum(it["price"]*it["qty"] for it in items)
-        discount = GLOBAL_DISCOUNT_EUR if GLOBAL_DISCOUNT_ACTIVE else 0.0
-        if promo_code == PROMO_CODE:
-            discount += 10.0
+        subtotal = sum(p["price"] * qty for p, qty in items)
+promo_code = m.text.strip().upper()
+discount = 0.0
+
+# ✅ Promo code optionnel
+if promo_code == PROMO_CODE:
+    discount += 10.0
+
+# ✅ Fidélité : 10ème commande gratuite (-10€)
+with closing(db()) as conn:
+    cur = conn.execute("SELECT COUNT(*) FROM orders WHERE user_id=?", (m.from_user.id,))
+    order_count = cur.fetchone()[0]
+    if (order_count + 1) % 10 == 0:  # si c’est la 10ème commande
+        discount += GLOBAL_DISCOUNT_EUR
 
         delivery_fee = compute_delivery_fee(city, distance_km)
         total = max(0.0, subtotal - discount) + delivery_fee
