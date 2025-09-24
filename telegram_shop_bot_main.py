@@ -53,7 +53,6 @@ DEFAULT_TIERED_FEES = [(20, 20.0), (30, 30.0), (50, 50.0)]  # >50 km : non couve
 GLOBAL_DISCOUNT_ACTIVE = False      # Désactive la remise globale
 GLOBAL_DISCOUNT_EUR = 10.0          # Montant prévu (reste défini mais inactif)
 PROMO_CODE = "TRESORERIE10"         # Code promo optionnel
-"
 
 # ---------- DB Schema ----------
 SCHEMA_SQL = """
