@@ -637,16 +637,24 @@ async def handle_webapp(m: Message):
 promo_code = m.text.strip().upper()
 discount = 0.0
 
-# ✅ Promo code optionnel
+# --- Remises ---
+# (A) Code promo optionnel (tu peux garder/supprimer)
 if promo_code == PROMO_CODE:
     discount += 10.0
 
-# ✅ Fidélité : 10ème commande gratuite (-10€)
+# (B) Fidélité : -10€ sur la 10ᵉ commande seulement
+# On compte les commandes DÉJÀ livrées. Si 9 sont livrées, celle-ci est la 10ᵉ.
 with closing(db()) as conn:
-    cur = conn.execute("SELECT COUNT(*) FROM orders WHERE user_id=?", (m.from_user.id,))
-    order_count = cur.fetchone()[0]
-    if (order_count + 1) % 10 == 0:  # si c’est la 10ème commande
-        discount += GLOBAL_DISCOUNT_EUR
+    cur = conn.execute(
+        "SELECT COUNT(*) FROM orders WHERE user_id=? AND status='delivered'",
+        (m.from_user.id,)
+    )
+    delivered_count = cur.fetchone()[0]
+
+loyalty_msg = ""
+if (delivered_count + 1) % 10 == 0:
+    discount += 10.0
+    loyalty_msg = "🎉 Fidélité: -10€ sur votre 10ᵉ commande !"
 
         delivery_fee = compute_delivery_fee(city, distance_km)
         total = max(0.0, subtotal - discount) + delivery_fee
