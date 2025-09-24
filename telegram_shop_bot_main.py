@@ -352,14 +352,14 @@ def main_menu_kb(role: str) -> InlineKeyboardMarkup:
 @dp.message(CommandStart())
 async def start(m: Message):
     ensure_user(m.from_user.id)
-   role_db = get_role(m.from_user.id)
-role = "admin" if m.from_user.id == OWNER_ID else role_db  # OWNER = admin
-await m.answer(
-    "👋 Bienvenue dans la mini-boutique Telegram (paiement <b>espèces</b> uniquement).\n"
-    "Livraison : <b>Millau gratuite</b>. Hors Millau : "
-    "<b>20€ / 30€ / 50€</b> selon la distance. (>50 km : non couvert)",
-    reply_markup=main_menu_kb(role),
-)
+    role_db = get_role(m.from_user.id)
+    role = "admin" if m.from_user.id == OWNER_ID else role_db  # OWNER = admin
+    await m.answer(
+        "👋 Bienvenue dans la mini-boutique Telegram (paiement <b>espèces</b> uniquement).\n"
+        "Livraison : <b>Millau gratuite</b>. Hors Millau : "
+        "<b>20€ / 30€ / 50€</b> selon la distance. (>50 km : non couvert)",
+        reply_markup=main_menu_kb(role),
+    )
 
 @dp.message(Command("help"))
 async def help_cmd(m: Message):
