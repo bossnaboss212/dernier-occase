@@ -655,10 +655,10 @@ with closing(db()) as conn:
 loyalty_msg = ""
 if (delivered_count + 1) % 10 == 0:
     discount += 10.0
-    loyalty_msg = "🎉 Fidélité: -10€ sur votre 10ᵉ commande !"
+    loyalty_msg = "🎉 Fidélité: -10€ sur votre 10e commande !"
 
-        delivery_fee = compute_delivery_fee(city, distance_km)
-        total = max(0.0, subtotal - discount) + delivery_fee
+delivery_fee = compute_delivery_fee(city, distance_km)
+total = max(0.0, subtotal - discount) + delivery_fee
 
         code = gen_code()
         with closing(db()) as conn:
