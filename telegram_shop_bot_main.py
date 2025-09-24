@@ -213,6 +213,18 @@ def set_role(user_id: int, role: str):
             (user_id, role, datetime.utcnow().isoformat()))
         conn.commit()
 
+# --- ACL helpers (owner/admin/staff) ---
+def is_owner(user_id: int) -> bool:
+    return user_id == OWNER_ID
+
+def is_admin(user_id: int) -> bool:
+    # admin OU owner
+    return get_role(user_id) == "admin" or is_owner(user_id)
+
+def is_staff(user_id: int) -> bool:
+    # staff OU admin OU owner
+    return get_role(user_id) in ("staff", "admin") or is_owner(user_id)
+
 def list_products(active_only: bool = True) -> List[sqlite3.Row]:
     with closing(db()) as conn:
         if active_only:
