@@ -632,15 +632,16 @@ async def handle_webapp(m: Message):
         city = data["city"]
         distance_km = float(data.get("distance_km", 0) or 0)
         promo_code = (data.get("promo") or "").strip().upper()
-        
-subtotal = sum(p["price"] * qty for p, qty in items)
-promo_code = m.text.strip().upper()
-discount = 0.0
 
-# --- Remises ---
-# (A) Code promo optionnel (tu peux garder/supprimer)
-if promo_code == PROMO_CODE:
-    discount += 10.0
+        subtotal = sum(p["price"] * qty for p, qty in items)
+        discount = 0.0
+
+        # --- Remises ---
+        if promo_code == PROMO_CODE:
+            discount += 10.0
+
+    except Exception as e:
+        await m.answer(f"⚠️ Erreur lors du checkout : {e}")
 
 # (B) Fidélité : -10€ sur la 10ᵉ commande seulement
 # On compte les commandes DÉJÀ livrées. Si 9 sont livrées, celle-ci est la 10ᵉ.
