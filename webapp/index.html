@@ -42,6 +42,18 @@
   @media(min-width:780px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
   .card{position:relative;overflow:hidden;border-radius:20px;background:var(--panel);border:1px solid #263144;cursor:pointer}
   .card .pic{aspect-ratio:4/5;width:100%;object-fit:cover;display:block}
+  .card .vid{
+  width:100%;
+  height:180px;
+  object-fit:cover;
+  border-radius:14px;
+  margin-top:8px;
+  background:#000;
+  display:block;
+}
+@media (min-width:780px){
+  .card .vid{ height:220px; }
+}
   .chip{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.55);color:#fff;padding:8px 10px;border-radius:999px;font-weight:700}
   .name{position:absolute;left:12px;right:12px;bottom:10px;background:linear-gradient(to top,rgba(0,0,0,.65),rgba(0,0,0,0));
     color:#fff;font-weight:800;font-size:20px;padding:34px 10px 8px;border-radius:14px}
@@ -157,58 +169,143 @@
   </aside>
 
 <script>
-/* ------------------ Données produits (exemple) ------------------ */
+/* ------------------ Données produits ------------------ */
 const PRODUCTS = [
   {
     id: 1,
-    name: "White Runtz",
-    farm: "Cookie Fam Genetics",
-    category: "Fleurs",
-    pic: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=600&auto=format&fit=crop",
+    name: "Amnesia",
+    category: "weed",
+    pic: "img/amnesia.jpg",
     variants: [
-      {label:"5G", grams:5, price:50},
-      {label:"10G", grams:10, price:100},
-      {label:"20G", grams:20, price:200},
-      {label:"30G", grams:30, price:290},
+      {label:"3,33G", grams:3.33, price:20},
+      {label:"5G", grams:5, price:30},
+      {label:"10G", grams:10, price:60},
+      {label:"50G", grams:50, price:250},
+      {label:"100G", grams:100, price:450},
     ]
   },
   {
     id: 2,
-    name: "Frozen Sift",
-    farm: "Cali Plates",
-    category: "Hash",
-    pic: "https://images.unsplash.com/photo-1505575972945-280f42b48b45?q=80&w=600&auto=format&fit=crop",
+    name: "Needles☁️",
+    category: "kéta ☁️",
+    pic: "img/needles.jpg",
     variants: [
-      {label:"5G", grams:5, price:60},
-      {label:"10G", grams:10, price:120},
-      {label:"20G", grams:20, price:240},
-      {label:"30G", grams:30, price:330},
+      {label:"1G", grams:1, price:20},
+      {label:"2G", grams:2, price:40},
+      {label:"3G", grams:3, price:50},
+      {label:"5G", grams:5, price:80},
+      {label:"10G", grams:10, price:150},
     ]
   },
   {
     id: 3,
-    name: "Napoli - Morocco",
-    farm: "Farm Morocco",
-    category: "Hash",
-    pic: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=600&auto=format&fit=crop",
+    name: "Champagne",
+    category: "MDMA 🌈",
+    pic: "img/champagne.jpg",
     variants: [
-      {label:"5G", grams:5, price:45},
-      {label:"10G", grams:10, price:90},
-      {label:"20G", grams:20, price:180},
-      {label:"30G", grams:30, price:260},
+      {label:"1G", grams:1, price:20},
+      {label:"2G", grams:2, price:40},
+      {label:"3G", grams:3, price:50},
+      {label:"5G", grams:5, price:80},
+      {label:"10G", grams:10, price:150},
     ]
   },
   {
     id: 4,
-    name: "Premium 220/90u",
-    farm: "V.V.S TANGER",
-    category: "Hash",
-    pic: "https://images.unsplash.com/photo-1542487358-3366f2e4f06f?q=80&w=600&auto=format&fit=crop",
+    name: "El Jefe❄️",
+    category: "blanche neige 🧊",
+    pic: "img/eljefe.jpg",
     variants: [
-      {label:"5G", grams:5, price:100},
-      {label:"10G", grams:10, price:200},
-      {label:"20G", grams:20, price:400},
-      {label:"30G", grams:30, price:570},
+      {label:"0,5G", grams:0.5, price:30},
+      {label:"1G", grams:1, price:50},
+      {label:"2G", grams:2, price:100},
+      {label:"5G", grams:5, price:250},
+      {label:"10G", grams:10, price:430},
+    ]
+  },
+  {
+    id: 5,
+    name: "Tropicana Cake 120u",
+    category: "filtré 🤯",
+    pic: "img/tropicana.jpg",
+    variants: [
+      {label:"2,5G", grams:2.5, price:20},
+      {label:"5G", grams:5, price:40},
+      {label:"10G", grams:10, price:70},
+      {label:"50G", grams:50, price:290},
+    ]
+  },
+  {
+    id: 6,
+    name: "Pistacchio 73u",
+    category: "filtré 🤯",
+    pic: "img/pistacchio.jpg",
+    variants: [
+      {label:"3G", grams:3, price:30},
+      {label:"4,5G", grams:4.5, price:30},
+      {label:"10G", grams:10, price:60},
+      {label:"50G", grams:50, price:250},
+    ]
+  },
+  {
+    id: 7,
+    name: "Dembele",
+    category: "mousseux 🧽",
+    pic: "img/dembele.jpg",
+    variants: [
+      {label:"3,5G", grams:3.5, price:20},
+      {label:"5G", grams:5, price:30},
+      {label:"10G", grams:10, price:50},
+      {label:"50G", grams:50, price:190},
+      {label:"100G", grams:100, price:370},
+    ]
+  },
+  {
+    id: 8,
+    name: "Lemon x Gelato",
+    category: "cali us 🇺🇸",
+    pic: "img/lemon-gelato.jpg",
+    variants: [
+      {label:"1,66G", grams:1.66, price:20},
+      {label:"3,5G", grams:3.5, price:40},
+      {label:"5G", grams:5, price:60},
+      {label:"10G", grams:10, price:110},
+    ]
+  },
+  {
+    id: 9,
+    name: "Georgia Pie",
+    category: "cali us 🇺🇸",
+    pic: "img/georgia.jpg",
+    variants: [
+      {label:"1,66G", grams:1.66, price:20},
+      {label:"3,5G", grams:3.5, price:40},
+      {label:"5G", grams:5, price:60},
+      {label:"10G", grams:10, price:110},
+    ]
+  },
+  {
+    id: 10,
+    name: "Dominos 280mg",
+    category: "bonbon 💊",
+    pic: "img/dominos.jpg",
+    variants: [
+      {label:"3 unités", grams:3, price:20},
+      {label:"10 unités", grams:10, price:60},
+      {label:"50 unités", grams:50, price:150},
+    ]
+  },
+  {
+    id: 11,
+    name: "Fresh Frozen 🥶",
+    category: "filtré 🤯",
+    pic: "img/freshfrozen.jpg",
+    variants: [
+      {label:"1,1G", grams:1.1, price:20},
+      {label:"2,3G", grams:2.3, price:40},
+      {label:"3,5G", grams:3.5, price:50},
+      {label:"5G", grams:5, price:80},
+      {label:"10G", grams:10, price:160},
     ]
   }
 ];
@@ -261,10 +358,13 @@ function renderGrid(){
     const card = document.createElement("div");
     card.className="card";
     card.innerHTML = `
-      <img class="pic" src="${p.pic}" alt="">
-      <div class="chip">${p.farm}</div>
-      <div class="name">${p.name}</div>
-    `;
+  <img class="pic" src="${p.pic}" alt="">
+  ${p.video ? `
+    <video class="vid" src="${p.video}" controls playsinline preload="metadata"></video>
+  ` : ``}
+  <div class="chip">${p.farm}</div>
+  <div class="name">${p.name}</div>
+`;
     card.onclick = ()=>openSheet(p);
     elGrid.appendChild(card);
   });
