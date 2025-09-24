@@ -633,9 +633,13 @@ async def handle_webapp(m: Message):
         distance_km = float(data.get("distance_km", 0) or 0)
         promo_code = (data.get("promo") or "").strip().upper()
 
-        subtotal = sum(p["price"] * qty for p, qty in items)
-promo_code = m.text.strip().upper()
-discount = 0.0
+        try:
+    subtotal = sum(p["price"] * qty for p, qty in items)
+    promo_code = m.text.strip().upper()
+    discount = 0.0
+except Exception as e:
+    await m.answer(f"Erreur calcul promo: {e}")
+    return
 
 # --- Remises ---
 # (A) Code promo optionnel (tu peux garder/supprimer)
