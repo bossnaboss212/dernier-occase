@@ -38,21 +38,21 @@
     padding:12px 14px;font-size:14px}
 
   /* Grid */
-  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-  @media(min-width:780px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-  .card{position:relative;overflow:hidden;border-radius:20px;background:var(--panel);border:1px solid #263144;cursor:pointer}
-  .card .pic{aspect-ratio:4/5;width:100%;object-fit:cover;display:block}
-  .card .vid{
-  width:100%;
-  height:180px;
-  object-fit:cover;
-  border-radius:14px;
-  margin-top:8px;
-  background:#000;
-  display:block;
+.card{position:relative; overflow:hidden; border-radius:20px; background:var(--panel); border:1px solid #263144; cursor:pointer;}
+.media{position:relative;}
+.media .ph,
+.media .vid{display:block; width:100%; height:220px; object-fit:cover; background:#000;}
+
+.play{
+  position:absolute; left:50%; top:50%;
+  transform:translate(-50%,-50%);
+  width:64px; height:64px; border-radius:50%; border:0;
+  font-size:26px; line-height:64px; text-align:center;
+  background:rgba(0,0,0,.5); color:#fff; backdrop-filter: blur(2px);
 }
+
 @media (min-width:780px){
-  .card .vid{ height:220px; }
+  .media .ph, .media .vid{height:260px;}
 }
   .chip{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.55);color:#fff;padding:8px 10px;border-radius:999px;font-weight:700}
   .name{position:absolute;left:12px;right:12px;bottom:10px;background:linear-gradient(to top,rgba(0,0,0,.65),rgba(0,0,0,0));
@@ -129,7 +129,7 @@
   <dialog id="sheet">
     <div class="sheet">
       <div class="head">
-        <img id="sheetPic" src="" alt="">
+        <div id="sheetMedia"></div>
         <div class="meta">
           <div id="sheetTitle" class="title">Nom produit</div>
           <div id="sheetFarm" class="muted"></div>
@@ -367,39 +367,78 @@ elFarm.onchange = ()=>{ state.filterFarm = elFarm.value; renderGrid(); };
 /* --------------- Render grid --------------- */
 function renderGrid(){
   let list = PRODUCTS.slice();
-  if(state.filterCat) list = list.filter(p=>p.category===state.filterCat);
-  if(state.filterFarm) list = list.filter(p=>p.farm===state.filterFarm);
+
+  // filtres
+  if (state.filterCat)  list = list.filter(p => p.category === state.filterCat);
+  if (state.filterFarm) list = list.filter(p => p.farm === state.filterFarm);
+
   elGrid.innerHTML = "";
-  list.forEach(p=>{
+  list.forEach(p => {
     const card = document.createElement("div");
-    card.className="card";
-    card.innerHTML = `
-  <img class="pic" src="${p.pic}" alt="">
-  ${p.video ? `
-    <video class="vid" src="${p.video}" controls playsinline preload="metadata"></video>
-  ` : ``}
-  <div class="chip">${p.farm}</div>
-  <div class="name">${p.name}</div>
-`;
-    card.onclick = ()=>openSheet(p);
+    card.className = "card";
+
+    // media: vidéo si p.vid existe, sinon image
+    const isVideo = Boolean(p.vid);
+    const media = document.createElement(isVideo ? "video" : "img");
+    media.className = isVideo ? "vid" : "pic";
+
+    if (isVideo) {
+      media.src = p.vid;
+      if (p.pic) media.poster = p.pic;     // vignette si dispo
+      media.muted = true;
+      media.loop = true;
+      media.playsInline = true;
+      media.preload = "metadata";
+      // pas d'autoplay pour éviter les blocages iOS/Android
+    } else {
+      media.src = p.pic;
+      media.loading = "lazy";
+      media.alt = p.name || "";
+    }
+
+    card.appendChild(media);
+
+    // libellés
+    card.insertAdjacentHTML(
+      "beforeend",
+      `
+      <div class="chip">${p.farm || ""}</div>
+      <div class="name">${p.name || ""}</div>
+      `
+    );
+
+    card.onclick = () => openSheet(p);
     elGrid.appendChild(card);
   });
 }
-renderGrid();
 
 /* --------------- Product sheet --------------- */
-const dlg = document.getElementById("sheet");
-const sheetPic = document.getElementById("sheetPic");
-const sheetTitle = document.getElementById("sheetTitle");
-const sheetFarm = document.getElementById("sheetFarm");
-const sheetVariants = document.getElementById("sheetVariants");
-
 function openSheet(p){
-  sheetPic.src = p.pic;
+  const sheet = document.getElementById("sheet");
+  const sheetMedia = document.getElementById("sheetMedia"); // <div> au lieu de <img>
+  const sheetTitle = document.getElementById("sheetTitle");
+  const sheetFarm  = document.getElementById("sheetFarm");
+  const sheetVariants = document.getElementById("sheetVariants");
+
+  // Media : image ou vidéo selon l'extension
+  if (p.pic && /\.mp4$/i.test(p.pic)) {
+    sheetMedia.innerHTML = `
+      <video controls style="width:100%;border-radius:14px;display:block;background:#000">
+        <source src="${p.pic}" type="video/mp4">
+        Votre navigateur ne supporte pas la vidéo.
+      </video>`;
+  } else {
+    sheetMedia.innerHTML = `
+      <img src="${p.pic || ''}" alt="${p.name}" style="width:100%;border-radius:14px;display:block;">`;
+  }
+
+  // Titre / sous-titre
   sheetTitle.textContent = p.name;
-  sheetFarm.textContent = p.category + " • " + p.farm;
+  sheetFarm.textContent  = (p.category || "") + (p.farm ? (" · " + p.farm) : "");
+
+  // Variantes
   sheetVariants.innerHTML = "";
-  p.variants.forEach(v=>{
+  p.variants.forEach(v => {
     const row = document.createElement("div");
     row.className = "var";
     row.innerHTML = `
@@ -413,17 +452,24 @@ function openSheet(p){
       </div>
       <button class="btn">Ajouter</button>
     `;
-    const [minus,input,plus]=row.querySelectorAll(".qctrl > *");
-    minus.onclick=()=>{input.value=Math.max(1,parseInt(input.value||1)-1)};
-    plus.onclick =()=>{input.value=parseInt(input.value||1)+1};
-    row.querySelector(".btn").onclick = ()=>{
-      addToCart({id:p.id,name:p.name,pic:p.pic,variantLabel:v.label,price:v.price,qty:parseInt(input.value||1)});
+    const [minus,input,plus] = row.querySelectorAll(".qctrl > *");
+    minus.onclick = () => { input.value = Math.max(1, (parseInt(input.value)||1) - 1); };
+    plus.onclick  = () => { input.value = (parseInt(input.value)||1) + 1; };
+    row.querySelector(".btn").onclick = () => {
+      addToCart({
+        id: p.id,
+        name: p.name,
+        pic: p.pic,
+        variantLabel: v.label,
+        price: v.price,
+        qty: parseInt(input.value)||1
+      });
       dlg.close();
-      openCart();
     };
     sheetVariants.appendChild(row);
   });
-  dlg.showModal();
+
+  sheet.showModal();
 }
 
 /* --------------- Cart logic --------------- */
