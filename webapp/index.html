@@ -1,111 +1,406 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Dernier Occase Shop</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    body{font-family:system-ui,Arial;margin:0;padding:16px;background:#0f1115;color:#eaeaea}
-    h1{font-size:20px;margin:0 0 12px}
-    .card{background:#161a22;border:1px solid #242938;border-radius:14px;padding:12px;margin:10px 0}
-    .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-    button{padding:8px 12px;border:0;border-radius:10px;background:#2b84ff;color:white;cursor:pointer}
-    input,select{width:100%;padding:8px;border-radius:10px;border:1px solid #2a2f3b;background:#0f1115;color:#eaeaea}
-    .muted{opacity:.8;font-size:12px}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mini-App Shop</title>
+<!-- Telegram WebApp SDK (chargé seulement dans Telegram) -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg:#0f1318;--panel:#1a212b;--panel-2:#202938;--txt:#e7edf3;--muted:#9db1c7;
+    --brand:#43b6ff;--brand-2:#6fd4ff;--ok:#31d0a3;--badge:#ff5b5b;--warn:#ffc24b;
+    --shadow:0 10px 30px rgba(0,0,0,.35);
+    --radius:18px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto}
+  a{color:var(--brand);text-decoration:none}
+  .wrap{max-width:980px;margin:0 auto;padding:16px 14px 110px}
+
+  /* Header */
+  .brandbar{display:flex;align-items:center;gap:12px;padding:10px 4px 14px}
+  .brandbar img.logo{height:44px;width:auto;border-radius:12px;background:#000;object-fit:cover}
+  .brandbar .title{font-weight:800;font-size:20px;letter-spacing:.3px}
+  .spacer{flex:1}
+  .iconbtn{position:relative;display:inline-flex;align-items:center;justify-content:center;
+    width:48px;height:48px;border-radius:14px;background:var(--panel);box-shadow:var(--shadow);border:1px solid #263144;cursor:pointer}
+  .iconbtn:active{transform:scale(.98)}
+  .badge{position:absolute;top:-6px;right:-6px;background:var(--badge);color:#fff;border-radius:999px;
+    min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;padding:0 6px;border:2px solid var(--bg)}
+
+  /* Filters */
+  .filters{background:var(--panel);border:1px solid #263144;border-radius:var(--radius);padding:14px;margin:8px 0 18px}
+  .filters h4{margin:0 0 10px;font-size:16px}
+  .filters .row{display:grid;gap:10px;grid-template-columns:1fr 1fr}
+  select{appearance:none;background:var(--panel-2);color:var(--txt);border:1px solid #2b364a;border-radius:12px;
+    padding:12px 14px;font-size:14px}
+
+  /* Grid */
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+  @media(min-width:780px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  .card{position:relative;overflow:hidden;border-radius:20px;background:var(--panel);border:1px solid #263144;cursor:pointer}
+  .card .pic{aspect-ratio:4/5;width:100%;object-fit:cover;display:block}
+  .chip{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.55);color:#fff;padding:8px 10px;border-radius:999px;font-weight:700}
+  .name{position:absolute;left:12px;right:12px;bottom:10px;background:linear-gradient(to top,rgba(0,0,0,.65),rgba(0,0,0,0));
+    color:#fff;font-weight:800;font-size:20px;padding:34px 10px 8px;border-radius:14px}
+
+  /* Product sheet / variants */
+  dialog{border:none;border-radius:22px;background:var(--panel);color:var(--txt);max-width:520px;width:92%;box-shadow:var(--shadow)}
+  dialog::backdrop{background:rgba(0,0,0,.55)}
+  .sheet{padding:16px}
+  .sheet .head{display:flex;gap:12px}
+  .sheet img{width:120px;height:120px;object-fit:cover;border-radius:14px;border:1px solid #2c3750}
+  .sheet .meta{flex:1}
+  .sheet .title{font-size:18px;font-weight:800;margin:2px 0 8px}
+  .muted{color:var(--muted);font-size:14px}
+  .variants{margin-top:12px;display:grid;gap:10px}
+  .var{display:flex;align-items:center;gap:12px;background:var(--panel-2);border:1px solid #2b364a;border-radius:16px;padding:12px}
+  .qctrl{display:inline-grid;grid:auto / 48px 1fr 48px;align-items:center;background:#0b0f14;border:1px solid #2b364a;border-radius:12px}
+  .qctrl button{background:transparent;color:var(--txt);border:0;font-size:20px;height:42px;cursor:pointer}
+  .qctrl input{width:44px;text-align:center;background:transparent;color:#fff;border:0;font-weight:700}
+  .price{font-weight:800;font-size:18px;letter-spacing:.3px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;background:var(--brand);color:#001018;
+    border:0;border-radius:14px;padding:12px 18px;font-weight:800;cursor:pointer;box-shadow:var(--shadow)}
+  .btn:active{transform:translateY(1px)}
+  .btn.secondary{background:#2a3547;color:#e9f3ff}
+
+  /* Cart drawer */
+  .drawer{position:fixed;left:50%;transform:translateX(-50%);bottom:0;right:0;max-width:980px;
+    background:linear-gradient(180deg,rgba(0,0,0,.0),rgba(0,0,0,.6));pointer-events:none}
+  .drawer .panel{pointer-events:auto;margin:0 14px 16px;background:var(--panel);border:1px solid #263144;border-radius:20px;padding:14px}
+  .cartline{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px dashed #2b364a}
+  .cartline:last-child{border:0}
+  .total{display:flex;justify-content:space-between;align-items:center;margin-top:6px;padding-top:10px;border-top:1px solid #263144;font-weight:800}
+  .radio{display:flex;gap:12px;align-items:center;margin-top:8px}
+  .radio input{accent-color:var(--brand)}
+  .row-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:10px}
+  .footer-space{height:56px}
+
+  /* Menu (drawer) */
+  .menu{position:fixed;inset:0 0 0 auto;width:min(86%,360px);background:var(--panel);transform:translateX(100%);transition:.2s;box-shadow:var(--shadow)}
+  .menu.open{transform:none}
+  .menu h3{margin:16px}
+  .menu a.item{display:block;padding:14px 16px;color:var(--txt);border-top:1px solid #263144}
+  .note{background:#12202a;border:1px solid #134; color:#aee; padding:8px 12px;border-radius:12px;font-size:13px}
+
+  .hidden{display:none !important}
+</style>
 </head>
 <body>
-  <h1>🛒 Dernier Occase</h1>
+  <div class="wrap">
+    <div class="brandbar">
+      <img class="logo" src="https://raw.githubusercontent.com/twitter/twemoji/master/assets/svg/1f36f.svg" alt="">
+      <div class="title">Burning Farmz — mini-application</div>
+      <div class="spacer"></div>
+      <button id="cartBtn" class="iconbtn" title="Panier">
+        🛒 <span id="cartBadge" class="badge hidden">0</span>
+      </button>
+      <button id="menuBtn" class="iconbtn" title="Menu">☰</button>
+    </div>
 
-  <div id="products"></div>
+    <div class="filters">
+      <h4>🔎 Nos filtres</h4>
+      <div class="row">
+        <select id="catFilter"><option value="">Toutes les catégories</option></select>
+        <select id="farmFilter"><option value="">Toutes nos Farms</option></select>
+      </div>
+    </div>
 
-  <div class="card">
-    <div class="row"><b>Total:</b> <b id="total">0.00 €</b></div>
-    <div style="margin-top:8px">
-      <label>Adresse</label><input id="addr" placeholder="Rue, n°, complément">
-    </div>
-    <div style="margin-top:8px" class="row">
-      <div style="flex:1">
-        <label>Ville</label><input id="city" placeholder="Millau">
-      </div>
-      <div style="flex:1">
-        <label>Distance (km)</label><input id="km" type="number" step="0.1" placeholder="0">
-      </div>
-    </div>
-    <div style="margin-top:8px">
-      <label>Code promo</label><input id="promo" placeholder="(optionnel)">
-    </div>
-    <p class="muted">Paiement: espèces à la livraison</p>
-    <button id="checkout">Commander</button>
+    <div id="grid" class="grid"></div>
   </div>
 
-<script>
-const tg = window.Telegram.WebApp;
-tg.expand(); // plein écran
+  <div class="footer-space"></div>
 
-// Démo produits (tu peux brancher sur ta DB plus tard via une API)
+  <!-- Product sheet -->
+  <dialog id="sheet">
+    <div class="sheet">
+      <div class="head">
+        <img id="sheetPic" src="" alt="">
+        <div class="meta">
+          <div id="sheetTitle" class="title">Nom produit</div>
+          <div id="sheetFarm" class="muted"></div>
+          <div class="note" style="margin-top:8px">Paiement en espèces à la livraison. Panier synchronisé avec Telegram.</div>
+        </div>
+      </div>
+      <div id="sheetVariants" class="variants"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
+        <button class="btn secondary" onclick="document.getElementById('sheet').close()">Fermer</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Cart drawer -->
+  <div class="drawer">
+    <div class="panel hidden" id="cartPanel">
+      <div id="cartLines"></div>
+      <div class="radio">
+        <label><input type="radio" name="dtype" value="meetup" checked /> Meetup</label>
+        <label><input type="radio" name="dtype" value="delivery" /> Livraison (+ frais selon distance)</label>
+      </div>
+      <div class="total"><span>Total</span><span id="cartTotal">0.00 €</span></div>
+      <div class="row-actions">
+        <button class="btn secondary" id="clearBtn">Vider</button>
+        <button class="btn" id="checkoutBtn">Passer au checkout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Side menu -->
+  <aside id="sideMenu" class="menu">
+    <h3>☰ Menu</h3>
+    <a class="item" href="#" onclick="gotoTab('home')">🏠 Accueil</a>
+    <a class="item" href="#" onclick="gotoTab('info')">ℹ️ Informations</a>
+    <a class="item" href="#" onclick="gotoTab('reviews')">⭐ Avis</a>
+    <a class="item" href="https://t.me/Cipher_BS" target="_blank">🎧 Support</a>
+  </aside>
+
+<script>
+/* ------------------ Données produits (exemple) ------------------ */
 const PRODUCTS = [
-  {id:1, name:"Bouteille 1.0L", price:2.50},
-  {id:2, name:"Pack 6x0.5L",   price:6.90},
-  {id:3, name:"Pod citron",    price:3.20},
+  {
+    id: 1,
+    name: "White Runtz",
+    farm: "Cookie Fam Genetics",
+    category: "Fleurs",
+    pic: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=600&auto=format&fit=crop",
+    variants: [
+      {label:"5G", grams:5, price:50},
+      {label:"10G", grams:10, price:100},
+      {label:"20G", grams:20, price:200},
+      {label:"30G", grams:30, price:290},
+    ]
+  },
+  {
+    id: 2,
+    name: "Frozen Sift",
+    farm: "Cali Plates",
+    category: "Hash",
+    pic: "https://images.unsplash.com/photo-1505575972945-280f42b48b45?q=80&w=600&auto=format&fit=crop",
+    variants: [
+      {label:"5G", grams:5, price:60},
+      {label:"10G", grams:10, price:120},
+      {label:"20G", grams:20, price:240},
+      {label:"30G", grams:30, price:330},
+    ]
+  },
+  {
+    id: 3,
+    name: "Napoli - Morocco",
+    farm: "Farm Morocco",
+    category: "Hash",
+    pic: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=600&auto=format&fit=crop",
+    variants: [
+      {label:"5G", grams:5, price:45},
+      {label:"10G", grams:10, price:90},
+      {label:"20G", grams:20, price:180},
+      {label:"30G", grams:30, price:260},
+    ]
+  },
+  {
+    id: 4,
+    name: "Premium 220/90u",
+    farm: "V.V.S TANGER",
+    category: "Hash",
+    pic: "https://images.unsplash.com/photo-1542487358-3366f2e4f06f?q=80&w=600&auto=format&fit=crop",
+    variants: [
+      {label:"5G", grams:5, price:100},
+      {label:"10G", grams:10, price:200},
+      {label:"20G", grams:20, price:400},
+      {label:"30G", grams:30, price:570},
+    ]
+  }
 ];
 
-const cart = {};
-function renderProducts(){
-  const wrap = document.getElementById('products');
-  wrap.innerHTML = '';
-  PRODUCTS.forEach(p=>{
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `
-      <div class="row">
-        <div><b>${p.name}</b><div class="muted">${p.price.toFixed(2)} €</div></div>
-        <div class="row">
-          <button data-id="${p.id}" data-op="-">-</button>
-          <span id="q_${p.id}">${cart[p.id]||0}</span>
-          <button data-id="${p.id}" data-op="+">+</button>
-        </div>
-      </div>`;
-    wrap.appendChild(card);
-  });
-  wrap.addEventListener('click', e=>{
-    if(e.target.tagName!=='BUTTON') return;
-    const id = +e.target.dataset.id;
-    const op = e.target.dataset.op;
-    cart[id] = cart[id] || 0;
-    cart[id] = Math.max(0, cart[id] + (op==='+'?1:-1));
-    document.getElementById('q_'+id).innerText = cart[id];
-    updateTotal();
-  }, {once:false});
+/* --------------- Télégram init --------------- */
+const tg = window.Telegram?.WebApp;
+if(tg){
+  tg.expand(); // prend plus de hauteur
+  tg.setHeaderColor("#0f1318");
+  tg.setBackgroundColor("#0f1318");
 }
-function updateTotal(){
-  let t=0;
-  for(const p of PRODUCTS){
-    const q = cart[p.id]||0;
-    t += p.price*q;
-  }
-  document.getElementById('total').innerText = t.toFixed(2)+' €';
-}
-renderProducts(); updateTotal();
 
-document.getElementById('checkout').onclick = ()=>{
-  const payload = {
-    type: 'checkout',
-    items: Object.entries(cart).filter(([,q])=>q>0).map(([id,q])=>{
-      const p = PRODUCTS.find(pp=>pp.id==id);
-      return {id:+id, name:p.name, price:p.price, qty:q};
-    }),
-    address: document.getElementById('addr').value.trim(),
-    city: document.getElementById('city').value.trim() || 'Millau',
-    distance_km: parseFloat(document.getElementById('km').value || '0'),
-    promo: (document.getElementById('promo').value||'').trim()
-  };
-  if(payload.items.length===0){ alert('Panier vide'); return; }
-  if(!payload.address){ alert('Adresse requise'); return; }
-  tg.sendData(JSON.stringify(payload)); // renvoie les données au bot
-  tg.close();
+/* --------------- State panier --------------- */
+const state = {
+  filterCat: "",
+  filterFarm: "",
+  cart: [] // {id, name, pic, variantLabel, price, qty}
 };
+
+const elGrid = document.getElementById("grid");
+const elCat = document.getElementById("catFilter");
+const elFarm = document.getElementById("farmFilter");
+const elCartBtn = document.getElementById("cartBtn");
+const elMenuBtn = document.getElementById("menuBtn");
+const elBadge = document.getElementById("cartBadge");
+const elCartPanel = document.getElementById("cartPanel");
+const elCartLines = document.getElementById("cartLines");
+const elCartTotal = document.getElementById("cartTotal");
+const elClear = document.getElementById("clearBtn");
+const elCheckout = document.getElementById("checkoutBtn");
+
+/* --------------- Build filters --------------- */
+[...new Set(PRODUCTS.map(p=>p.category))].forEach(c=>{
+  const o=document.createElement("option");o.value=c;o.textContent=c;elCat.appendChild(o);
+});
+[...new Set(PRODUCTS.map(p=>p.farm))].forEach(c=>{
+  const o=document.createElement("option");o.value=c;o.textContent=c;elFarm.appendChild(o);
+});
+
+elCat.onchange = ()=>{ state.filterCat = elCat.value; renderGrid(); };
+elFarm.onchange = ()=>{ state.filterFarm = elFarm.value; renderGrid(); };
+
+/* --------------- Render grid --------------- */
+function renderGrid(){
+  let list = PRODUCTS.slice();
+  if(state.filterCat) list = list.filter(p=>p.category===state.filterCat);
+  if(state.filterFarm) list = list.filter(p=>p.farm===state.filterFarm);
+  elGrid.innerHTML = "";
+  list.forEach(p=>{
+    const card = document.createElement("div");
+    card.className="card";
+    card.innerHTML = `
+      <img class="pic" src="${p.pic}" alt="">
+      <div class="chip">${p.farm}</div>
+      <div class="name">${p.name}</div>
+    `;
+    card.onclick = ()=>openSheet(p);
+    elGrid.appendChild(card);
+  });
+}
+renderGrid();
+
+/* --------------- Product sheet --------------- */
+const dlg = document.getElementById("sheet");
+const sheetPic = document.getElementById("sheetPic");
+const sheetTitle = document.getElementById("sheetTitle");
+const sheetFarm = document.getElementById("sheetFarm");
+const sheetVariants = document.getElementById("sheetVariants");
+
+function openSheet(p){
+  sheetPic.src = p.pic;
+  sheetTitle.textContent = p.name;
+  sheetFarm.textContent = p.category + " • " + p.farm;
+  sheetVariants.innerHTML = "";
+  p.variants.forEach(v=>{
+    const row = document.createElement("div");
+    row.className = "var";
+    row.innerHTML = `
+      <div style="min-width:64px"><b>${v.label}</b></div>
+      <div class="price">${v.price} €</div>
+      <div class="spacer"></div>
+      <div class="qctrl">
+        <button type="button" aria-label="moins">−</button>
+        <input type="number" min="1" value="1"/>
+        <button type="button" aria-label="plus">+</button>
+      </div>
+      <button class="btn">Ajouter</button>
+    `;
+    const [minus,input,plus]=row.querySelectorAll(".qctrl > *");
+    minus.onclick=()=>{input.value=Math.max(1,parseInt(input.value||1)-1)};
+    plus.onclick =()=>{input.value=parseInt(input.value||1)+1};
+    row.querySelector(".btn").onclick = ()=>{
+      addToCart({id:p.id,name:p.name,pic:p.pic,variantLabel:v.label,price:v.price,qty:parseInt(input.value||1)});
+      dlg.close();
+      openCart();
+    };
+    sheetVariants.appendChild(row);
+  });
+  dlg.showModal();
+}
+
+/* --------------- Cart logic --------------- */
+function addToCart(item){
+  const k = state.cart.findIndex(x=>x.id===item.id && x.variantLabel===item.variantLabel);
+  if(k>=0) state.cart[k].qty += item.qty;
+  else state.cart.push(item);
+  syncCartUI();
+}
+function removeFromCart(idx){
+  state.cart.splice(idx,1);
+  syncCartUI();
+}
+function changeQty(idx,delta){
+  state.cart[idx].qty = Math.max(1, state.cart[idx].qty + delta);
+  syncCartUI();
+}
+function cartTotal(){
+  return state.cart.reduce((s,x)=>s+x.price*x.qty,0);
+}
+function syncCartUI(){
+  const count = state.cart.reduce((s,x)=>s+x.qty,0);
+  if(count>0){ elBadge.textContent=count; elBadge.classList.remove("hidden"); }
+  else { elBadge.classList.add("hidden"); }
+  // lines
+  elCartLines.innerHTML = state.cart.map((x,i)=>`
+    <div class="cartline">
+      <div>
+        <div style="font-weight:800">${x.name} — ${x.variantLabel}</div>
+        <div class="muted">${x.price.toFixed(2)} € / unité</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="qctrl">
+          <button onclick="changeQty(${i},-1)">−</button>
+          <input value="${x.qty}" readonly />
+          <button onclick="changeQty(${i},1)">+</button>
+        </div>
+        <button class="btn secondary" onclick="removeFromCart(${i})">🗑</button>
+      </div>
+    </div>
+  `).join("");
+  elCartTotal.textContent = cartTotal().toFixed(2) + " €";
+}
+function openCart(){ elCartPanel.classList.remove("hidden"); }
+function closeCart(){ elCartPanel.classList.add("hidden"); }
+
+document.getElementById("cartBtn").onclick = ()=>{
+  if(elCartPanel.classList.contains("hidden")) openCart();
+  else closeCart();
+};
+document.getElementById("clearBtn").onclick = ()=>{
+  state.cart = []; syncCartUI();
+};
+
+/* --------------- Checkout → Telegram.sendData --------------- */
+document.getElementById("checkoutBtn").onclick = ()=>{
+  if(state.cart.length===0){ alert("Panier vide."); return; }
+  // petite fiche checkout (prompt) pour garder 1 fichier
+  const dtype = [...document.querySelectorAll('input[name="dtype"]')].find(r=>r.checked).value;
+  const address = prompt("Adresse complète (rue, n°, complément) :","") || "";
+  const city = prompt("Ville (ex: Millau) :","") || "";
+  const dist = prompt("Distance estimée en km (si Millau: 0) :","0") || "0";
+  const promo = prompt("Code promo (laisser vide si aucun):","") || "";
+
+  const payload = {
+    type: "checkout",
+    items: state.cart.map(x=>({id:x.id,name:x.name,variant:x.variantLabel,price:x.price,qty:x.qty})),
+    address, city, distance_km: parseFloat(String(dist).replace(",", "."))||0,
+    delivery_type: dtype,
+    promo,
+  };
+
+  // Envoi au bot
+  if(tg?.sendData){
+    tg.sendData(JSON.stringify(payload));
+  }else{
+    // Fallback web (debug)
+    alert("sendData (debug):\n"+JSON.stringify(payload,null,2));
+  }
+};
+
+/* --------------- Side menu --------------- */
+const side = document.getElementById("sideMenu");
+document.getElementById("menuBtn").onclick = ()=>side.classList.add("open");
+side.onclick = (e)=>{ if(e.target===side) side.classList.remove("open"); };
+function gotoTab(tab){
+  side.classList.remove("open");
+  if(tab==="info") alert("Infos boutique.\nQualité, paiement espèces, etc.");
+  if(tab==="reviews") alert("⭐ 5/5 • ‘Qualité au top !’ — Client");
+}
+
+/* First paint */
+syncCartUI();
 </script>
 </body>
 </html>
