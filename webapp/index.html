@@ -169,13 +169,15 @@
   </aside>
 
 <script>
-/* ------------------ Données produits ------------------ */
+/* ------------------ Données produits (custom) ------------------ */
 const PRODUCTS = [
   {
     id: 1,
     name: "Amnesia",
-    category: "weed",
-    pic: "img/amnesia.jpg",
+    farm: "coffee shop",
+    category: "🌿 weed",
+    pic: "img/AMNESIA.JPG",
+    video: "video/AMNESIA.MP4",
     variants: [
       {label:"3,33G", grams:3.33, price:20},
       {label:"5G", grams:5, price:30},
@@ -186,9 +188,11 @@ const PRODUCTS = [
   },
   {
     id: 2,
-    name: "Needles☁️",
-    category: "kéta ☁️",
-    pic: "img/needles.jpg",
+    name: "Needles",
+    farm: "Selection",
+    category: "☁️ kéta",
+    pic: "img/NEEDLES.JPG",
+    video: "video/NEEDLES.MP4",
     variants: [
       {label:"1G", grams:1, price:20},
       {label:"2G", grams:2, price:40},
@@ -200,8 +204,9 @@ const PRODUCTS = [
   {
     id: 3,
     name: "Champagne",
-    category: "MDMA 🌈",
-    pic: "img/champagne.jpg",
+    farm: "Selection",
+    category: "🌈 mdma",
+    video: "video/CHAMPAGNE.MP4",
     variants: [
       {label:"1G", grams:1, price:20},
       {label:"2G", grams:2, price:40},
@@ -212,9 +217,10 @@ const PRODUCTS = [
   },
   {
     id: 4,
-    name: "El Jefe❄️",
-    category: "blanche neige 🧊",
-    pic: "img/eljefe.jpg",
+    name: "El Jefe",
+    farm: "colombie",
+    category: "❄️ blanche neige",
+    video: "video/el jefe.MP4",
     variants: [
       {label:"0,5G", grams:0.5, price:30},
       {label:"1G", grams:1, price:50},
@@ -225,9 +231,11 @@ const PRODUCTS = [
   },
   {
     id: 5,
-    name: "Tropicana Cake 120u",
-    category: "filtré 🤯",
-    pic: "img/tropicana.jpg",
+    name: "skittlez Cake 120u",
+    farm: "hash montaine",
+    category: "🤯 filtré",
+    pic: "img/SKITTLEZ_CAKE.JPG",
+    video: "video/SKITTLEZ_CAKE.MP4",
     variants: [
       {label:"2,5G", grams:2.5, price:20},
       {label:"5G", grams:5, price:40},
@@ -238,8 +246,10 @@ const PRODUCTS = [
   {
     id: 6,
     name: "Pistacchio 73u",
-    category: "filtré 🤯",
-    pic: "img/pistacchio.jpg",
+    farm: "hash montaine",
+    category: "🤯 filtré",
+    pic: "img/PISTACCHIO.JPG",
+    video: "video/pistacchio.MP4",
     variants: [
       {label:"3G", grams:3, price:30},
       {label:"4,5G", grams:4.5, price:30},
@@ -250,8 +260,9 @@ const PRODUCTS = [
   {
     id: 7,
     name: "Dembele",
-    category: "mousseux 🧽",
-    pic: "img/dembele.jpg",
+    farm: "morroco",
+    category: "🧽 mousseux",
+    video: "video/debele.MP4",
     variants: [
       {label:"3,5G", grams:3.5, price:20},
       {label:"5G", grams:5, price:30},
@@ -263,8 +274,9 @@ const PRODUCTS = [
   {
     id: 8,
     name: "Lemon x Gelato",
-    category: "cali us 🇺🇸",
-    pic: "img/lemon-gelato.jpg",
+    farm: "top shelf",
+    category: "🇺🇸 cali us",
+    video: "video/LEMON_X_GELATO.MP4",
     variants: [
       {label:"1,66G", grams:1.66, price:20},
       {label:"3,5G", grams:3.5, price:40},
@@ -275,8 +287,9 @@ const PRODUCTS = [
   {
     id: 9,
     name: "Georgia Pie",
-    category: "cali us 🇺🇸",
-    pic: "img/georgia.jpg",
+    farm: "top shelf",
+    category: "🇺🇸 cali us",
+    video: "video/GEORGIA_PIE.MP4",
     variants: [
       {label:"1,66G", grams:1.66, price:20},
       {label:"3,5G", grams:3.5, price:40},
@@ -287,19 +300,22 @@ const PRODUCTS = [
   {
     id: 10,
     name: "Dominos 280mg",
-    category: "bonbon 💊",
-    pic: "img/dominos.jpg",
+    farm: "Selection",
+    category: "💊 bonbon",
+    video: "video/domino.MP4",
+    // Ici ce sont des unités, on laisse grams=0 et on met l’info dans le label
     variants: [
-      {label:"3 unités", grams:3, price:20},
-      {label:"10 unités", grams:10, price:60},
-      {label:"50 unités", grams:50, price:150},
+      {label:"3 unités", grams:0, price:20},
+      {label:"10 unités", grams:0, price:60},
+      {label:"50 unités", grams:0, price:150},
     ]
   },
   {
     id: 11,
-    name: "Fresh Frozen 🥶",
+    name: "Fresh Frozen",
+    farm: "FRESH",
     category: "filtré 🤯",
-    pic: "img/freshfrozen.jpg",
+    video: "video/fresh_frozen.MP4",
     variants: [
       {label:"1,1G", grams:1.1, price:20},
       {label:"2,3G", grams:2.3, price:40},
@@ -307,7 +323,7 @@ const PRODUCTS = [
       {label:"5G", grams:5, price:80},
       {label:"10G", grams:10, price:160},
     ]
-  }
+  },
 ];
 
 /* --------------- Télégram init --------------- */
