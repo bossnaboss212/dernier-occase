@@ -28,6 +28,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 from aiogram.client.default import DefaultBotProperties
+from aiogram.exceptions import TelegramBadRequest
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -355,6 +356,19 @@ def main_menu_kb(role: str) -> InlineKeyboardMarkup:
 
 def back_home_kb(role: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Menu", callback_data="home")]])
+
+async def edit_or_send(message: Message, text: str, **kwargs):
+    """
+    Essaie d'éditer le message. Si Telegram renvoie 'message is not modified',
+    on envoie un nouveau message avec le même texte/markup.
+    """
+    try:
+        await message.edit_text(text, **kwargs)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            await message.answer(text, **kwargs)
+        else:
+            raise
 
 # ---------- Commands ----------
 @dp.message(CommandStart())
@@ -724,7 +738,7 @@ async def cb_admin_panel(c: CallbackQuery):
         [InlineKeyboardButton(text="📦 Voir stock", callback_data="admin_stock")],
         [InlineKeyboardButton(text="⬅️ Retour", callback_data="home")],
     ])
-    await c.message.edit_text("⚙️ Panneau Admin :", reply_markup=kb)
+    await edit_or_send(c.message, "⚙️ Panneau Admin :", reply_markup=kb)
 
 @dp.callback_query(F.data == "admin_stock")
 async def cb_admin_stock(c: CallbackQuery):
@@ -761,7 +775,7 @@ async def admin_add_product_start(c: CallbackQuery, state: FSMContext):
     if not is_admin(c.from_user.id):
         return await c.answer("⛔", show_alert=True)
     await state.set_state(AdminAddProduct.waiting_name)
-    await c.message.edit_text("📝 Nom du produit ?")
+    await edit_or_send(c.message, "📝 Nom du produit ?")
 
 @dp.message(AdminAddProduct.waiting_name)
 async def admin_add_name(m: Message, state: FSMContext):
@@ -826,7 +840,7 @@ async def admin_edit_product_start(c: CallbackQuery, state: FSMContext):
         callback_data=f"editp:{r['id']}")] for r in rows]
     kb.append([InlineKeyboardButton(text="⬅️ Retour", callback_data="admin_panel")])
     await state.set_state(AdminEditProduct.waiting_choose_product)
-    await c.message.edit_text("✏️ Choisis un produit :", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+    await edit_or_send(c.message, "✏️ Choisis un produit :", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
 @dp.callback_query(F.data.startswith("editp:"), AdminEditProduct.waiting_choose_product)
 async def admin_edit_pick_product(c: CallbackQuery, state: FSMContext):
@@ -845,7 +859,11 @@ async def admin_edit_pick_product(c: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="⬅️ Retour", callback_data="admin_edit_product")],
     ])
     await state.set_state(AdminEditProduct.waiting_choose_field)
-    await c.message.edit_text(f"Produit : <b>{prod['name']}</b>\nQue veux-tu modifier ?", reply_markup=kb)
+    await edit_or_send(
+    c.message,
+    f"Produit : <b>{prod['name']}</b>\nQue veux-tu modifier ?",
+    reply_markup=kb
+)
 
 @dp.callback_query(F.data.startswith("editfield:"), AdminEditProduct.waiting_choose_field)
 async def admin_edit_pick_field(c: CallbackQuery, state: FSMContext):
@@ -858,10 +876,13 @@ async def admin_edit_pick_field(c: CallbackQuery, state: FSMContext):
         "stock": "📦 Nouveau stock (entier) ?",
         "photo": "📷 Envoie une photo OU un lien URL (ou /cancel)",
     }
-    await c.message.edit_text(prompts.get(field, "Valeur ?"),
-                              reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                                  [InlineKeyboardButton(text="⬅️ Annuler", callback_data="admin_panel")]
-                              ]))
+    await edit_or_send(
+    c.message,
+    prompt,
+    reply_markup=InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="⬅️ Annuler", callback_data="admin_panel")]]
+    )
+)
 
 @dp.message(AdminEditProduct.waiting_new_value)
 async def admin_edit_apply(m: Message, state: FSMContext):
