@@ -1,41 +1,17 @@
 """
 Telegram Mini-Shop Bot (Cash Only) — Millau-focused Delivery
-
-Features:
-- Cash-only checkout
-- Stock management (deduct on delivery)
-- CA (revenue) & treasury tracking
-- Anonymous order dispatch to courier channel
-- Reviews / ratings
-- Staff & admin roles
-- "Envie de postuler" (job applications)
-- Contact support
-- Delivery pricing: Millau (free), outside Millau tiered; here: 20/30/50 km tiers, blocked beyond max
-- Distance-based pricing stored in DB (/fees, /set_fees)
-- /export_ca → CSV + PDF summaries
-- Optional 10€ discount toggle (global) + promo code TRESORERIE10
-- /ping test (also posts to courier channel)
-
-Stack:
-- Python 3.10+
-- aiogram >= 3.4
-- sqlite3
-- reportlab
-- python-dotenv
 """
 
 import asyncio
 import csv
 import os
 import sqlite3
-from contextlib import closing
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from io import BytesIO
-from typing import List, Optional, Tuple
 import json
 import random
 import string
+from contextlib import closing
+from datetime import datetime, timedelta
+from typing import List, Optional, Tuple
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode
@@ -49,9 +25,9 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
+    WebAppInfo,
 )
-from aiogram.types import WebAppInfo
-from aiogram.client.default import DefaultBotProperties   # <= ajoute ça
+from aiogram.client.default import DefaultBotProperties
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -62,8 +38,8 @@ load_dotenv()
 
 # ---------- ENV ----------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-COURIER_CHANNEL_ID = int(os.getenv("COURIER_CHANNEL_ID", "0"))  # negative for channels
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))  # superadmin fallback
+COURIER_CHANNEL_ID = int(os.getenv("COURIER_CHANNEL_ID", "0"))  # peut être négatif pour un channel
+OWNER_ID = int((os.getenv("OWNER_ID", "0") or "0").strip())
 DB_PATH = os.getenv("DB_PATH", "shop.db")
 
 if not BOT_TOKEN:
@@ -71,16 +47,7 @@ if not BOT_TOKEN:
 
 # ---------- Pricing / Discount ----------
 MILLAU_CITY = "Millau"
-
-# Defaults used on first run, then editable via /set_fees
-DEFAULT_TIERED_FEES = [  # (max_distance_km, fee)
-    (20, 20.0),
-    (30, 30.0),
-    (50, 50.0),
-]
-DEFAULT_PER_KM_ABOVE_MAX = 0.0  # not used because we block > 50 km; keep for schema
-
-# Global discount (can be toggled later if needed)
+DEFAULT_TIERED_FEES = [(20, 20.0), (30, 30.0), (50, 50.0)]  # >50 km : non couvert (bloqué)
 GLOBAL_DISCOUNT_ACTIVE = True
 GLOBAL_DISCOUNT_EUR = 10.0
 PROMO_CODE = "TRESORERIE10"
@@ -91,7 +58,7 @@ PRAGMA journal_mode=WAL;
 
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
-    role TEXT DEFAULT 'customer', -- customer|staff|admin
+    role TEXT DEFAULT 'customer',
     created_at TEXT
 );
 
@@ -158,13 +125,14 @@ CREATE TABLE IF NOT EXISTS treasury (
     created_at TEXT
 );
 
--- key/value settings (JSON)
+-- key/value divers (photos produits, frais, etc.)
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
 """
 
+# ---------- DB ----------
 def db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -173,33 +141,28 @@ def db() -> sqlite3.Connection:
 def init_db():
     with closing(db()) as conn:
         conn.executescript(SCHEMA_SQL)
-        # seed default fees if not set
+        # seed frais si absent
         cur = conn.execute("SELECT value FROM settings WHERE key='fees'")
         if not cur.fetchone():
-            fees_payload = {
-                "tiers": DEFAULT_TIERED_FEES,
-                "per_km": DEFAULT_PER_KM_ABOVE_MAX
-            }
             conn.execute("INSERT INTO settings(key,value) VALUES('fees',?)",
-                         (json.dumps(fees_payload),))
+                         (json.dumps({"tiers": DEFAULT_TIERED_FEES, "per_km": 0.0}),))
         conn.commit()
 
 # ---------- Helpers ----------
 def gen_code(prefix: str = "CMD") -> str:
-    tail = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    return f"{prefix}-{tail}"
+    return f"{prefix}-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 def ensure_user(user_id: int):
     with closing(db()) as conn:
         cur = conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,))
         if not cur.fetchone():
-            conn.execute(
-                "INSERT INTO users(user_id, role, created_at) VALUES (?, 'customer', ?)",
-                (user_id, datetime.utcnow().isoformat()),
-            )
+            conn.execute("INSERT INTO users(user_id, role, created_at) VALUES (?,?,?)",
+                         (user_id, "customer", datetime.utcnow().isoformat()))
             conn.commit()
 
 def get_role(user_id: int) -> str:
+    if user_id == OWNER_ID:
+        return "admin"
     with closing(db()) as conn:
         cur = conn.execute("SELECT role FROM users WHERE user_id=?", (user_id,))
         row = cur.fetchone()
@@ -213,40 +176,73 @@ def set_role(user_id: int, role: str):
             (user_id, role, datetime.utcnow().isoformat()))
         conn.commit()
 
-# --- ACL helpers (owner/admin/staff) ---
+# --- ACL helpers ---
 def is_owner(user_id: int) -> bool:
     return user_id == OWNER_ID
-
 def is_admin(user_id: int) -> bool:
-    # admin OU owner
     return get_role(user_id) == "admin" or is_owner(user_id)
-
 def is_staff(user_id: int) -> bool:
-    # staff OU admin OU owner
     return get_role(user_id) in ("staff", "admin") or is_owner(user_id)
 
-def list_products(active_only: bool = True) -> List[sqlite3.Row]:
+# --- Product helpers (CRUD) ---
+def get_product(pid: int) -> Optional[sqlite3.Row]:
     with closing(db()) as conn:
-        if active_only:
-            cur = conn.execute("SELECT * FROM products WHERE is_active=1 ORDER BY id")
-        else:
-            cur = conn.execute("SELECT * FROM products ORDER BY id")
+        cur = conn.execute("SELECT * FROM products WHERE id=?", (pid,))
+        return cur.fetchone()
+
+def list_active_products() -> List[sqlite3.Row]:
+    with closing(db()) as conn:
+        cur = conn.execute("SELECT * FROM products WHERE is_active=1 ORDER BY id")
+        return cur.fetchall()
+
+def list_inactive_products() -> List[sqlite3.Row]:
+    with closing(db()) as conn:
+        cur = conn.execute("SELECT * FROM products WHERE is_active=0 ORDER BY id")
         return cur.fetchall()
 
 def add_product(name: str, price: float, stock: int):
     with closing(db()) as conn:
         conn.execute(
             "INSERT OR IGNORE INTO products(name, price, stock, is_active) VALUES (?,?,?,1)",
-            (name, price, stock),
+            (name, price, stock)
         )
         conn.commit()
 
-def update_stock(product_id: int, delta: int):
+def set_price(pid: int, price: float):
     with closing(db()) as conn:
-        conn.execute("UPDATE products SET stock = stock + ? WHERE id=?",
-                     (delta, product_id))
+        conn.execute("UPDATE products SET price=? WHERE id=?", (price, pid))
         conn.commit()
 
+def set_stock_absolute(pid: int, stock: int):
+    with closing(db()) as conn:
+        conn.execute("UPDATE products SET stock=? WHERE id=?", (stock, pid))
+        conn.commit()
+
+def deactivate_product(pid: int):
+    with closing(db()) as conn:
+        conn.execute("UPDATE products SET is_active=0 WHERE id=?", (pid,))
+        conn.commit()
+
+def reactivate_product(pid: int):
+    with closing(db()) as conn:
+        conn.execute("UPDATE products SET is_active=1 WHERE id=?", (pid,))
+        conn.commit()
+
+def set_photo_by_name(name: str, file_id_or_url: str):
+    with closing(db()) as conn:
+        conn.execute(
+            "INSERT INTO settings(key, value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (f"product_photo_{name}", file_id_or_url),
+        )
+        conn.commit()
+
+def set_product_name(pid: int, new_name: str):
+    with closing(db()) as conn:
+        conn.execute("UPDATE products SET name=? WHERE id=?", (new_name, pid))
+        conn.commit()
+
+# --- Cart helpers ---
 def add_to_cart(user_id: int, product_id: int, qty: int):
     with closing(db()) as conn:
         conn.execute(
@@ -256,15 +252,12 @@ def add_to_cart(user_id: int, product_id: int, qty: int):
         )
         conn.commit()
 
-def get_cart(user_id: int) -> List[Tuple[sqlite3.Row, int]]:
+def get_cart(user_id: int):
     with closing(db()) as conn:
-        cur = conn.execute("SELECT product_id, qty FROM carts WHERE user_id=?",
-                           (user_id,))
+        cur = conn.execute("SELECT product_id, qty FROM carts WHERE user_id=?", (user_id,))
         items = []
         for r in cur.fetchall():
-            pcur = conn.execute("SELECT * FROM products WHERE id=?",
-                                (r["product_id"],))
-            p = pcur.fetchone()
+            p = conn.execute("SELECT * FROM products WHERE id=?", (r["product_id"],)).fetchone()
             if p:
                 items.append((p, r["qty"]))
         return items
@@ -274,45 +267,39 @@ def clear_cart(user_id: int):
         conn.execute("DELETE FROM carts WHERE user_id=?", (user_id,))
         conn.commit()
 
-# fees in DB
+# --- Fees helpers ---
 def get_fees():
     with closing(db()) as conn:
-        cur = conn.execute("SELECT value FROM settings WHERE key='fees'")
-        row = cur.fetchone()
+        row = conn.execute("SELECT value FROM settings WHERE key='fees'").fetchone()
         if not row:
-            return {"tiers": DEFAULT_TIERED_FEES, "per_km": DEFAULT_PER_KM_ABOVE_MAX}
+            return {"tiers": DEFAULT_TIERED_FEES, "per_km": 0.0}
         try:
-            data = json.loads(row[0])
+            data = json.loads(row["value"])
             tiers = [(float(a), float(b)) for a, b in data.get("tiers", DEFAULT_TIERED_FEES)]
-            per_km = float(data.get("per_km", DEFAULT_PER_KM_ABOVE_MAX))
-            return {"tiers": tiers, "per_km": per_km}
+            return {"tiers": tiers, "per_km": float(data.get("per_km", 0.0))}
         except Exception:
-            return {"tiers": DEFAULT_TIERED_FEES, "per_km": DEFAULT_PER_KM_ABOVE_MAX}
+            return {"tiers": DEFAULT_TIERED_FEES, "per_km": 0.0}
 
-def set_fees(tiers: List[Tuple[float, float]], per_km: float):
+def set_fees(tiers: List[Tuple[float, float]], per_km: float = 0.0):
     payload = {"tiers": tiers, "per_km": per_km}
     with closing(db()) as conn:
         conn.execute(
             "INSERT INTO settings(key,value) VALUES('fees',?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (json.dumps(payload),))
+            (json.dumps(payload),)
+        )
         conn.commit()
 
 def compute_delivery_fee(city: str, distance_km: float) -> float:
     if city.strip().lower() == MILLAU_CITY.lower():
         return 0.0
     fees = get_fees()
-    tiers = fees["tiers"]
-    for max_km, fee in tiers:
+    for max_km, fee in fees["tiers"]:
         if distance_km <= max_km:
             return fee
-    # Block delivery beyond the last tier
-    max_cap, base_fee = tiers[-1]
-    if distance_km > float(max_cap):
-        raise ValueError("Zone de livraison non couverte (au-delà des paliers définis)")
-    return float(base_fee)
+    raise ValueError("Zone de livraison non couverte (au-delà de 50 km).")
 
-# ---------- FSM States ----------
+# ---------- FSM ----------
 class Checkout(StatesGroup):
     waiting_address = State()
     waiting_city = State()
@@ -329,47 +316,54 @@ class Postuler(StatesGroup):
 class Support(StatesGroup):
     waiting_text = State()
 
+class AdminAddProduct(StatesGroup):
+    waiting_name = State()
+    waiting_price = State()
+    waiting_stock = State()
+    waiting_photo = State()
+
+class AdminEditProduct(StatesGroup):
+    waiting_choose_product = State()
+    waiting_choose_field = State()
+    waiting_new_value = State()
+
 # ---------- Bot ----------
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 
-# ---------- Keyboards ----------
+# ---------- UI ----------
 def main_menu_kb(role: str) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(
-            text="🛍️ Boutique",
+            text="🛍️ Boutique (Mini-App)",
             web_app=WebAppInfo(url="https://bossnaboss212.github.io/dernier-occase/webapp/index.html")
         )],
         [InlineKeyboardButton(text="🛒 Catalogue", callback_data="catalogue"),
          InlineKeyboardButton(text="🧺 Panier", callback_data="panier")],
         [InlineKeyboardButton(text="🚚 Commander (cash)", callback_data="checkout")],
         [InlineKeyboardButton(text="💸 Tarifs livraison", callback_data="fees")],
-        [InlineKeyboardButton(text="⭐ Laisser un avis", callback_data="avis"),
+        [InlineKeyboardButton(text="⭐ Avis", callback_data="avis"),
          InlineKeyboardButton(text="🧑‍💼 Postuler", callback_data="postuler")],
         [InlineKeyboardButton(text="🆘 Assistance", callback_data="support")],
     ]
-
-    # si staff ou admin → on ajoute le bouton gestion stock
     if role in ("staff", "admin"):
-        buttons.append([InlineKeyboardButton(text="📦 Gestion stock", callback_data="admin_stock"),
+        buttons.append([InlineKeyboardButton(text="📦 Stock", callback_data="admin_stock"),
                         InlineKeyboardButton(text="📈 Export CA", callback_data="export_ca")])
-
-    # si admin → bouton admin spécial
     if role == "admin":
         buttons.append([InlineKeyboardButton(text="⚙️ Admin", callback_data="admin_panel")])
-
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def back_home_kb(role: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Menu", callback_data="home")]])
 
 # ---------- Commands ----------
 @dp.message(CommandStart())
 async def start(m: Message):
     ensure_user(m.from_user.id)
-    role_db = get_role(m.from_user.id)
-    role = "admin" if m.from_user.id == OWNER_ID else role_db  # OWNER = admin
+    role = get_role(m.from_user.id)
     await m.answer(
         "👋 Bienvenue dans la mini-boutique Telegram (paiement <b>espèces</b> uniquement).\n"
-        "Livraison : <b>Millau gratuite</b>. Hors Millau : "
-        "<b>20€ / 30€ / 50€</b> selon la distance. (>50 km : non couvert)",
+        "Livraison : <b>Millau gratuite</b>. Hors Millau : <b>20€ / 30€ / 50€</b> selon la distance. (>50 km : non couvert)",
         reply_markup=main_menu_kb(role),
     )
 
@@ -378,37 +372,32 @@ async def help_cmd(m: Message):
     await m.answer(
         "Commandes utiles:\n"
         "/start — menu\n"
-        "/add_product nom|prix|stock — admin/staff\n"
-        "/set_role user_id role — admin (customer|staff|admin)\n"
-        "/fees — afficher tarifs livraison\n"
-        "/set_fees 20:20,30:30,50:50 — admin (paliers)\n"
-        "/export_ca — admin/staff (CSV + PDF)\n"
-        "/ping — test bot + message canal livreurs"
+        "/ping — test\n"
+        "/add_product Nom|12.5|10 — admin/staff\n"
+        "/set_role user_id customer|staff|admin — admin\n"
+        "/fees — afficher tarifs\n"
+        "/set_fees 20:20,30:30,50:50 — admin\n"
+        "/export_ca — admin/staff\n"
+        "/assign CODE courier_user_id — admin\n"
+        "/delivered CODE — admin/staff (déduit stock + CA)"
     )
 
 @dp.message(Command("ping"))
 async def ping_cmd(m: Message):
-    await m.answer("pong ✅ (bot en ligne)")
+    await m.answer("pong ✅")
     try:
         if COURIER_CHANNEL_ID:
-            await bot.send_message(
-                COURIER_CHANNEL_ID,
-                "🔔 Test Ping reçu — le bot est bien connecté au canal livreurs !"
-            )
+            await bot.send_message(COURIER_CHANNEL_ID, "🔔 Test: bot connecté au canal livreurs.")
     except Exception as e:
-        await m.answer(f"⚠️ Erreur envoi canal: {e}")
+        await m.answer(f"⚠️ Erreur canal: {e}")
 
 @dp.message(Command("whoami"))
 async def whoami(m: Message):
-    await m.answer(
-        f"ID: {m.from_user.id}\n"
-        f"Role DB: {get_role(m.from_user.id)}\n"
-        f"Owner: {m.from_user.id == OWNER_ID}"
-    )
+    await m.answer(f"ID: {m.from_user.id}\nRole DB: {get_role(m.from_user.id)}\nOwner: {m.from_user.id == OWNER_ID}")
 
 @dp.message(Command("add_product"))
 async def cmd_add_product(m: Message):
-    if get_role(m.from_user.id) not in ("admin", "staff"):
+    if not is_staff(m.from_user.id):
         return await m.answer("⛔ Autorisation requise.")
     try:
         _, rest = m.text.split(" ", 1)
@@ -417,69 +406,29 @@ async def cmd_add_product(m: Message):
         await m.answer(f"✅ Produit ajouté: {name} ({price}€, stock {stock})")
     except Exception:
         await m.answer("Format: /add_product Nom|12.5|10")
-@dp.message(Command("shop"))
-async def open_shop(m: Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text="🛍️ Ouvrir la boutique",
-            web_app=WebAppInfo(
-                url="https://bossnaboss212.github.io/dernier-occase/webapp/index.html"
-            )
-        )
-    ]])
-    await m.answer("Ouvre la boutique mini-app :", reply_markup=kb)
 
 @dp.message(Command("set_role"))
 async def cmd_set_role(m: Message):
-    # Vérifie si l'émetteur est admin et correspond à l'OWNER_ID
-    if get_role(m.from_user.id) != "admin" and m.from_user.id != OWNER_ID:
+    if not is_admin(m.from_user.id):
         return await m.answer("🚫 Admin uniquement.")
-
     try:
         _, uid, role = m.text.split()
         set_role(int(uid), role)
-        await m.answer(f"✅ Rôle de l'utilisateur {uid} mis à jour en : {role}")
+        await m.answer(f"✅ Rôle de l'utilisateur {uid} → {role}")
     except Exception:
-        await m.answer(
-            "Format correct :\n"
-            "`/set_role user_id customer|staff|admin`",
-            parse_mode="Markdown"
-        )
-
-@dp.callback_query(F.data == "admin_panel")
-async def admin_panel_handler(c: CallbackQuery):
-    # sécurité : seulement l’admin (ou l’OWNER_ID)
-    if get_role(c.from_user.id) != "admin" and c.from_user.id != OWNER_ID:
-        return await c.answer("⛔ Accès réservé à l’admin", show_alert=True)
-
-    text = (
-        "⚙️ <b>Panneau Admin</b>\n\n"
-        "Commandes utiles :\n"
-        "• /add_product Nom|Prix|Stock|PhotoURL\n"
-        "• /set_price id|Prix\n"
-        "• /set_stock id|Stock\n"
-        "• /set_photo id|URL\n"
-        "• /export_ca  (CSV + PDF)\n"
-        "• /assign CODE courier_user_id\n"
-        "• /delivered CODE  (déduit stock + CA)\n"
-    )
-    await c.message.answer(text)
-    await c.answer()
+        await m.answer("Format correct :\n`/set_role user_id customer|staff|admin`", parse_mode="Markdown")
 
 @dp.message(Command("fees"))
 async def cmd_fees(m: Message):
     f = get_fees()
     tiers_lines = "\n".join([f"≤{a:g} km: {b:.2f}€" for a, b in f["tiers"]])
-    await m.answer(
-        "Tarifs actuels:\n" + tiers_lines + "\n>50 km: non couvert\nMillau: 0€"
-    )
+    await m.answer("Tarifs actuels:\n" + tiers_lines + "\n>50 km: non couvert\nMillau: 0€")
 
 @dp.message(Command("set_fees"))
 async def cmd_set_fees(m: Message):
-    if get_role(m.from_user.id) != "admin":
+    if not is_admin(m.from_user.id):
         return await m.answer("⛔ Admin uniquement.")
     try:
-        # Syntaxe: /set_fees 20:20,30:30,50:50
         _, payload = m.text.split(" ", 1)
         tiers = []
         for chunk in payload.split(","):
@@ -493,44 +442,33 @@ async def cmd_set_fees(m: Message):
 
 @dp.message(Command("export_ca"))
 async def cmd_export_ca(m: Message):
-    if get_role(m.from_user.id) not in ("admin", "staff"):
+    if not is_staff(m.from_user.id):
         return await m.answer("⛔ Autorisation requise.")
     csv_path, pdf_path = export_ca_files()
     await m.answer_document(document=FSInputFile(csv_path, filename="ca_export.csv"))
     await m.answer_document(document=FSInputFile(pdf_path, filename="ca_export.pdf"))
 
-# ---------- Callbacks ----------
+# ---------- Catalogue & Panier ----------
 @dp.callback_query(F.data == "home")
 async def cb_home(c: CallbackQuery):
     role = get_role(c.from_user.id)
     await c.message.edit_text("Menu principal", reply_markup=main_menu_kb(role))
     await c.answer()
 
-@dp.callback_query(F.data == "fees")
-async def cb_fees(c: CallbackQuery):
-    fees = get_fees()
-    tiers = fees["tiers"]
-    lines = ["<b>Tarifs livraison</b>"]
-    lines.append("Millau: <b>0€</b>")
-    for max_km, fee in tiers:
-        lines.append(f"≤{max_km:g} km: <b>{fee:.2f}€</b>")
-    lines.append(">50 km: ❌ non couvert")
-    await c.message.edit_text("\n".join(lines), reply_markup=back_home_kb(get_role(c.from_user.id)))
-    await c.answer()
-
 @dp.callback_query(F.data == "catalogue")
 async def cb_catalogue(c: CallbackQuery):
-    ps = list_products()
-    if not ps:
-        await c.message.edit_text("Catalogue vide.", reply_markup=back_home_kb(get_role(c.from_user.id)))
-        return await c.answer()
-    lines = ["<b>Catalogue</b>"]
+    products = list_active_products()
+    if not products:
+        return await c.message.edit_text("📭 Catalogue vide.", reply_markup=back_home_kb(get_role(c.from_user.id)))
+
+    text_lines = ["<b>Produits disponibles :</b>"]
     kb_rows = []
-    for p in ps:
-        lines.append(f"#{p['id']} — {p['name']} — {p['price']:.2f}€ — stock {p['stock']}")
+    for p in products:
+        text_lines.append(f"• #{p['id']} {p['name']} — {p['price']:.2f}€ (stock {p['stock']})")
         kb_rows.append([InlineKeyboardButton(text=f"+ {p['name']}", callback_data=f"addcart:{p['id']}")])
     kb_rows.append([InlineKeyboardButton(text="⬅️ Menu", callback_data="home")])
-    await c.message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
+
+    await c.message.edit_text("\n".join(text_lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows))
     await c.answer()
 
 @dp.callback_query(F.data.startswith("addcart:"))
@@ -561,6 +499,7 @@ async def cb_panier(c: CallbackQuery):
     )
     await c.answer()
 
+# ---------- Checkout (cash) ----------
 @dp.callback_query(F.data == "checkout")
 async def cb_checkout(c: CallbackQuery, state: FSMContext):
     items = get_cart(c.from_user.id)
@@ -568,7 +507,7 @@ async def cb_checkout(c: CallbackQuery, state: FSMContext):
         await c.answer("Panier vide.")
         return
     await state.set_state(Checkout.waiting_address)
-    await c.message.edit_text("📍 Envoyez votre adresse complète (rue, n°, complément).\n(Paiement en espèces à la livraison)")
+    await c.message.edit_text("📍 Adresse complète ? (rue, n°, complément)\n(Paiement en espèces à la livraison)")
 
 @dp.message(Checkout.waiting_address)
 async def checkout_address(m: Message, state: FSMContext):
@@ -580,7 +519,7 @@ async def checkout_address(m: Message, state: FSMContext):
 async def checkout_city(m: Message, state: FSMContext):
     await state.update_data(city=m.text.strip())
     await state.set_state(Checkout.waiting_distance)
-    await m.answer("📏 Distance estimée jusqu'à notre dépôt (en km). (Si vous êtes à Millau, répondez 0)")
+    await m.answer("📏 Distance estimée (km). Si vous êtes à Millau, répondez 0.")
 
 @dp.message(Checkout.waiting_distance)
 async def checkout_distance(m: Message, state: FSMContext):
@@ -604,11 +543,10 @@ async def checkout_finalize(m: Message, state: FSMContext):
         await state.clear()
         return await m.answer("Panier vide.")
 
-    # Validate stock availability at checkout time (no deduction yet)
+    # Vérif stock
     with closing(db()) as conn:
         for p, qty in items:
-            cur = conn.execute("SELECT stock FROM products WHERE id=?", (p["id"],))
-            st = cur.fetchone()[0]
+            st = conn.execute("SELECT stock FROM products WHERE id=?", (p["id"],)).fetchone()[0]
             if st < qty:
                 await state.clear()
                 return await m.answer(f"Stock insuffisant pour {p['name']} (restant {st}).")
@@ -620,10 +558,8 @@ async def checkout_finalize(m: Message, state: FSMContext):
         return await m.answer(str(e))
 
     subtotal = sum(p["price"] * qty for p, qty in items)
-    promo_code = m.text.strip().upper()
-    discount = 0.0
-    if GLOBAL_DISCOUNT_ACTIVE:
-        discount += GLOBAL_DISCOUNT_EUR
+    promo_code = (m.text or "").strip().upper()
+    discount = GLOBAL_DISCOUNT_EUR if GLOBAL_DISCOUNT_ACTIVE else 0.0
     if promo_code == PROMO_CODE:
         discount += 10.0
 
@@ -639,36 +575,23 @@ async def checkout_finalize(m: Message, state: FSMContext):
         conn.execute(
             "INSERT INTO orders(code,user_id,items_json,subtotal,discount,delivery_fee,total,address,city,distance_km,status,courier_user_id,created_at)"
             " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                code,
-                m.from_user.id,
-                items_json,
-                subtotal,
-                discount,
-                delivery_fee,
-                total,
-                address,
-                city,
-                distance_km,
-                "pending",
-                None,
-                datetime.utcnow().isoformat(),
-            ),
+            (code, m.from_user.id, items_json, subtotal, discount, delivery_fee, total,
+             address, city, distance_km, "pending", None, datetime.utcnow().isoformat())
         )
         conn.commit()
 
-    # Send anonymous order to courier channel
+    # Message anonyme au canal livreurs
     if COURIER_CHANNEL_ID:
-        txt = (f"📦 Nouvelle commande <b>{code}</b>\n"
-               f"Articles:")
+        txt = f"📦 Nouvelle commande <b>{code}</b>\nArticles:"
         for p, qty in items:
             txt += f"\n• {p['name']} x{qty}"
         txt += (f"\n\nLivraison: {city}, {distance_km:.1f} km\n"
-                f"Adresse: {address}\n"
-                f"Paiement: <b>Espèces</b>\n"
-                f"Total à encaisser: <b>{total:.2f}€</b>\n"
-                f"(Client anonyme)")
-        await bot.send_message(COURIER_CHANNEL_ID, txt)
+                f"Adresse: {address}\nPaiement: <b>Espèces</b>\n"
+                f"Total à encaisser: <b>{total:.2f}€</b>\n(Client anonyme)")
+        try:
+            await bot.send_message(COURIER_CHANNEL_ID, txt)
+        except Exception:
+            pass
 
     clear_cart(m.from_user.id)
     await state.clear()
@@ -678,9 +601,60 @@ async def checkout_finalize(m: Message, state: FSMContext):
         f"Code: <b>{code}</b>\n"
         f"Sous-total: {subtotal:.2f}€ | Réduc: −{discount:.2f}€ | Livraison: {delivery_fee:.2f}€\n"
         f"Total: <b>{total:.2f}€</b>\n"
-        "Un livreur vous contacte. Préparez l'appoint en espèces."
+        "Un livreur vous contacte. Paiement en espèces."
     )
 
+# ---------- Mini-app: réception des données (tg.sendData) ----------
+@dp.message(F.web_app_data)
+async def handle_webapp(m: Message):
+    try:
+        data = json.loads(m.web_app_data.data)
+        if data.get("type") != "checkout":
+            return
+
+        items = data["items"]
+        address = data["address"]
+        city = data["city"]
+        distance_km = float(data.get("distance_km", 0) or 0)
+        promo_code = (data.get("promo") or "").strip().upper()
+
+        subtotal = sum(it["price"]*it["qty"] for it in items)
+        discount = GLOBAL_DISCOUNT_EUR if GLOBAL_DISCOUNT_ACTIVE else 0.0
+        if promo_code == PROMO_CODE:
+            discount += 10.0
+
+        delivery_fee = compute_delivery_fee(city, distance_km)
+        total = max(0.0, subtotal - discount) + delivery_fee
+
+        code = gen_code()
+        with closing(db()) as conn:
+            conn.execute(
+                "INSERT INTO orders(code,user_id,items_json,subtotal,discount,delivery_fee,total,address,city,distance_km,status,courier_user_id,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (code, m.from_user.id, json.dumps(items), subtotal, discount, delivery_fee, total,
+                 address, city, distance_km, "pending", None, datetime.utcnow().isoformat())
+            )
+            conn.commit()
+
+        if COURIER_CHANNEL_ID:
+            txt = f"📦 Nouvelle commande <b>{code}</b>\nArticles:" + "".join(
+                f"\n• {it['name']} x{it['qty']}" for it in items
+            )
+            txt += (f"\n\nLivraison: {city}, {distance_km:.1f} km\n"
+                    f"Adresse: {address}\nPaiement: <b>Espèces</b>\n"
+                    f"Total à encaisser: <b>{total:.2f}€</b>\n(Client anonyme)")
+            await bot.send_message(COURIER_CHANNEL_ID, txt)
+
+        await m.answer(
+            "✅ Commande enregistrée via la mini-app !\n"
+            f"Code: <b>{code}</b>\nTotal: <b>{total:.2f}€</b>\nPréparez l’appoint en espèces."
+        )
+    except ValueError as e:
+        await m.answer(str(e))
+    except Exception as e:
+        await m.answer(f"❌ Erreur mini-app: {e}")
+
+# ---------- Avis / Postuler / Support ----------
 @dp.callback_query(F.data == "avis")
 async def cb_avis(c: CallbackQuery, state: FSMContext):
     await state.set_state(Review.waiting_rating)
@@ -700,11 +674,10 @@ async def review_rating(m: Message, state: FSMContext):
 
 @dp.message(Review.waiting_text)
 async def review_text(m: Message, state: FSMContext):
-    data = await state.get_data()
     with closing(db()) as conn:
         conn.execute(
             "INSERT INTO reviews(user_id,rating,text,created_at) VALUES(?,?,?,?)",
-            (m.from_user.id, int(data["rating"]), m.text.strip(), datetime.utcnow().isoformat()),
+            (m.from_user.id, int((await state.get_data())["rating"]), m.text.strip(), datetime.utcnow().isoformat()),
         )
         conn.commit()
     await state.clear()
@@ -714,7 +687,6 @@ async def review_text(m: Message, state: FSMContext):
 async def cb_postuler(c: CallbackQuery, state: FSMContext):
     await state.set_state(Postuler.waiting_text)
     await c.message.edit_text("Expliquez votre expérience et dispo.")
-    await c.answer()
 
 @dp.message(Postuler.waiting_text)
 async def postuler_text(m: Message, state: FSMContext):
@@ -729,7 +701,6 @@ async def postuler_text(m: Message, state: FSMContext):
 async def cb_support(c: CallbackQuery, state: FSMContext):
     await state.set_state(Support.waiting_text)
     await c.message.edit_text("Décrivez votre problème. Un agent vous répondra.")
-    await c.answer()
 
 @dp.message(Support.waiting_text)
 async def support_text(m: Message, state: FSMContext):
@@ -740,43 +711,275 @@ async def support_text(m: Message, state: FSMContext):
     await state.clear()
     await m.answer("Merci, l'assistance vous contactera sous peu.")
 
+# ---------- Admin: panneau + opérations stock/exports ----------
 @dp.callback_query(F.data == "admin_panel")
 async def cb_admin_panel(c: CallbackQuery):
-    if get_role(c.from_user.id) != "admin":
-        return await c.answer("⛔ Admin uniquement.", show_alert=True)
+    if not is_admin(c.from_user.id):
+        return await c.answer("⛔ Admin uniquement", show_alert=True)
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Assigner livreur", callback_data="admin_assign")],
-        [InlineKeyboardButton(text="Marquer livrée (déduit stock)", callback_data="admin_delivered")],
-        [InlineKeyboardButton(text="⬅️ Menu", callback_data="home")]
+        [InlineKeyboardButton(text="➕ Ajouter produit", callback_data="admin_add_product")],
+        [InlineKeyboardButton(text="✏️ Modifier produit", callback_data="admin_edit_product")],
+        [InlineKeyboardButton(text="🗑️ Désactiver produit", callback_data="admin_delete_product")],
+        [InlineKeyboardButton(text="♻️ Réactiver produit", callback_data="admin_reactivate_product")],
+        [InlineKeyboardButton(text="📦 Voir stock", callback_data="admin_stock")],
+        [InlineKeyboardButton(text="⬅️ Retour", callback_data="home")],
     ])
-    await c.message.edit_text("Panneau admin", reply_markup=kb)
-    await c.answer()
+    await c.message.edit_text("⚙️ Panneau Admin :", reply_markup=kb)
 
 @dp.callback_query(F.data == "admin_stock")
 async def cb_admin_stock(c: CallbackQuery):
-    if get_role(c.from_user.id) not in ("admin", "staff"):
-        return await c.answer("⛔", show_alert=True)
-    ps = list_products(active_only=False)
+    if not is_staff(c.from_user.id):
+        return await c.answer("⛔ Autorisation requise.", show_alert=True)
+    ps = list_active_products()
     lines = ["<b>Stock</b>"]
     for p in ps:
-        lines.append(f"#{p['id']} {p['name']}: {p['stock']} en stock | {p['price']:.2f}€")
+        lines.append(f"#{p['id']} {p['name']}: {p['stock']} | {p['price']:.2f}€")
     await c.message.edit_text("\n".join(lines), reply_markup=back_home_kb(get_role(c.from_user.id)))
     await c.answer()
 
+@dp.message(Command("export_ca"))
+async def cmd_export_ca_dup(m: Message):
+    # (gardé au cas où double déclaration — déjà plus haut aussi)
+    if not is_staff(m.from_user.id):
+        return await m.answer("⛔ Autorisation requise.")
+    csv_path, pdf_path = export_ca_files()
+    await m.answer_document(document=FSInputFile(csv_path, filename="ca_export.csv"))
+    await m.answer_document(document=FSInputFile(pdf_path, filename="ca_export.pdf"))
+
 @dp.callback_query(F.data == "export_ca")
 async def cb_export(c: CallbackQuery):
-    if get_role(c.from_user.id) not in ("admin", "staff"):
+    if not is_staff(c.from_user.id):
         return await c.answer("⛔", show_alert=True)
     csv_path, pdf_path = export_ca_files()
     await bot.send_document(c.message.chat.id, FSInputFile(csv_path, filename="ca_export.csv"))
     await bot.send_document(c.message.chat.id, FSInputFile(pdf_path, filename="ca_export.pdf"))
     await c.answer("Export envoyé.")
 
-# ---------- Admin Ops ----------
-def get_open_orders() -> List[sqlite3.Row]:
+# ---------- Admin: Ajouter produit (FSM) ----------
+@dp.callback_query(F.data == "admin_add_product")
+async def admin_add_product_start(c: CallbackQuery, state: FSMContext):
+    if not is_admin(c.from_user.id):
+        return await c.answer("⛔", show_alert=True)
+    await state.set_state(AdminAddProduct.waiting_name)
+    await c.message.edit_text("📝 Nom du produit ?")
+
+@dp.message(AdminAddProduct.waiting_name)
+async def admin_add_name(m: Message, state: FSMContext):
+    await state.update_data(name=m.text.strip())
+    await state.set_state(AdminAddProduct.waiting_price)
+    await m.answer("💰 Prix (€) ?")
+
+@dp.message(AdminAddProduct.waiting_price)
+async def admin_add_price(m: Message, state: FSMContext):
+    try:
+        price = float(m.text.replace(",", "."))
+    except:
+        return await m.answer("❌ Entrez un prix valide.")
+    await state.update_data(price=price)
+    await state.set_state(AdminAddProduct.waiting_stock)
+    await m.answer("📦 Stock initial ?")
+
+@dp.message(AdminAddProduct.waiting_stock)
+async def admin_add_stock(m: Message, state: FSMContext):
+    try:
+        stock = int(m.text)
+    except:
+        return await m.answer("❌ Entrez un entier.")
+    await state.update_data(stock=stock)
+    await state.set_state(AdminAddProduct.waiting_photo)
+    await m.answer("📷 Envoie une photo (ou tape 'non').")
+
+@dp.message(AdminAddProduct.waiting_photo)
+async def admin_add_photo(m: Message, state: FSMContext):
+    if not is_admin(m.from_user.id):
+        await state.clear()
+        return await m.answer("⛔")
+    data = await state.get_data()
+    name, price, stock = data["name"], data["price"], data["stock"]
+    photo_file_id = None
+    if m.photo:
+        photo_file_id = m.photo[-1].file_id
+    elif (m.text or "").strip().lower() not in ("", "non"):
+        # accepte aussi URL
+        photo_file_id = m.text.strip()
+
+    add_product(name, float(price), int(stock))
+    if photo_file_id:
+        set_photo_by_name(name, photo_file_id)
+
+    await state.clear()
+    await m.answer(f"✅ Produit ajouté : {name} ({price:.2f}€, stock {stock})")
+
+# ---------- Admin: Modifier produit (FSM) ----------
+@dp.callback_query(F.data == "admin_edit_product")
+async def admin_edit_product_start(c: CallbackQuery, state: FSMContext):
+    if not is_admin(c.from_user.id):
+        return await c.answer("⛔", show_alert=True)
+    rows = list_active_products()
+    if not rows:
+        return await c.message.edit_text("📭 Aucun produit actif.",
+                                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                             [InlineKeyboardButton(text="⬅️ Retour", callback_data="admin_panel")]
+                                         ]))
+    kb = [[InlineKeyboardButton(
+        text=f"#{r['id']} {r['name']} ({r['price']}€ / stock {r['stock']})",
+        callback_data=f"editp:{r['id']}")] for r in rows]
+    kb.append([InlineKeyboardButton(text="⬅️ Retour", callback_data="admin_panel")])
+    await state.set_state(AdminEditProduct.waiting_choose_product)
+    await c.message.edit_text("✏️ Choisis un produit :", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+@dp.callback_query(F.data.startswith("editp:"), AdminEditProduct.waiting_choose_product)
+async def admin_edit_pick_product(c: CallbackQuery, state: FSMContext):
+    if not is_admin(c.from_user.id):
+        return await c.answer("⛔", show_alert=True)
+    pid = int(c.data.split(":")[1])
+    prod = get_product(pid)
+    if not prod:
+        return await c.answer("Produit introuvable", show_alert=True)
+    await state.update_data(pid=pid)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🆔 Nom",   callback_data="editfield:name")],
+        [InlineKeyboardButton(text="💰 Prix",  callback_data="editfield:price")],
+        [InlineKeyboardButton(text="📦 Stock", callback_data="editfield:stock")],
+        [InlineKeyboardButton(text="📷 Photo", callback_data="editfield:photo")],
+        [InlineKeyboardButton(text="⬅️ Retour", callback_data="admin_edit_product")],
+    ])
+    await state.set_state(AdminEditProduct.waiting_choose_field)
+    await c.message.edit_text(f"Produit : <b>{prod['name']}</b>\nQue veux-tu modifier ?", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("editfield:"), AdminEditProduct.waiting_choose_field)
+async def admin_edit_pick_field(c: CallbackQuery, state: FSMContext):
+    field = c.data.split(":")[1]
+    await state.update_data(field=field)
+    await state.set_state(AdminEditProduct.waiting_new_value)
+    prompts = {
+        "name":  "🆔 Nouveau nom ?",
+        "price": "💰 Nouveau prix (€) ?",
+        "stock": "📦 Nouveau stock (entier) ?",
+        "photo": "📷 Envoie une photo OU un lien URL (ou /cancel)",
+    }
+    await c.message.edit_text(prompts.get(field, "Valeur ?"),
+                              reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                  [InlineKeyboardButton(text="⬅️ Annuler", callback_data="admin_panel")]
+                              ]))
+
+@dp.message(AdminEditProduct.waiting_new_value)
+async def admin_edit_apply(m: Message, state: FSMContext):
+    if not is_admin(m.from_user.id):
+        await state.clear()
+        return await m.answer("⛔")
+    data = await state.get_data()
+    pid = int(data["pid"])
+    field = data["field"]
+    prod = get_product(pid)
+    if not prod:
+        await state.clear()
+        return await m.answer("❌ Produit introuvable.")
+    try:
+        if field == "name":
+            new_name = (m.text or "").strip()
+            if not new_name:
+                return await m.answer("❌ Nom invalide.")
+            set_product_name(pid, new_name)
+            await m.answer(f"✅ Nom mis à jour : {new_name}")
+        elif field == "price":
+            price = float(m.text.replace(",", "."))
+            set_price(pid, price)
+            await m.answer(f"✅ Prix mis à jour : {price:.2f}€")
+        elif field == "stock":
+            stock = int(m.text)
+            set_stock_absolute(pid, stock)
+            await m.answer(f"✅ Stock mis à jour : {stock}")
+        elif field == "photo":
+            if m.photo:
+                file_id = m.photo[-1].file_id
+                set_photo_by_name(prod["name"], file_id)
+                await m.answer("✅ Photo mise à jour (média).")
+            else:
+                url = (m.text or "").strip()
+                if not url:
+                    return await m.answer("❌ Envoie une photo ou une URL.")
+                set_photo_by_name(prod["name"], url)
+                await m.answer("✅ Photo mise à jour (URL).")
+        else:
+            await m.answer("❌ Champ inconnu.")
+    except Exception as e:
+        await m.answer(f"❌ Erreur: {e}")
+    await state.clear()
+
+# ---------- Admin: Désactiver / Réactiver ----------
+@dp.callback_query(F.data == "admin_delete_product")
+async def admin_delete_product_start(c: CallbackQuery):
+    if not is_admin(c.from_user.id):
+        return await c.answer("⛔", show_alert=True)
+    rows = list_active_products()
+    if not rows:
+        return await c.message.edit_text("📭 Aucun produit actif.")
+    kb = [[InlineKeyboardButton(
+        text=f"🗑️ #{r['id']} {r['name']} ({r['price']}€ / stock {r['stock']})",
+        callback_data=f"delp:{r['id']}")] for r in rows]
+    kb.append([InlineKeyboardButton(text="⬅️ Retour", callback_data="admin_panel")])
+    await c.message.edit_text("🗑️ Choisis un produit à désactiver :", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+@dp.callback_query(F.data.startswith("delp:"))
+async def admin_delete_product_confirm(c: CallbackQuery):
+    if not is_admin(c.from_user.id):
+        return await c.answer("⛔", show_alert=True)
+    pid = int(c.data.split(":")[1])
+    prod = get_product(pid)
+    if not prod:
+        return await c.answer("Produit introuvable", show_alert=True)
+    deactivate_product(pid)
+    await c.message.edit_text(f"✅ Produit désactivé : <b>{prod['name']}</b>",
+                              reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                  [InlineKeyboardButton(text="⬅️ Retour Admin", callback_data="admin_panel")]
+                              ]))
+
+@dp.callback_query(F.data == "admin_reactivate_product")
+async def admin_reactivate_product_start(c: CallbackQuery):
+    if not is_admin(c.from_user.id):
+        return await c.answer("⛔", show_alert=True)
+    rows = list_inactive_products()
+    if not rows:
+        return await c.message.edit_text("✅ Aucun produit désactivé.",
+                                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                             [InlineKeyboardButton(text="⬅️ Retour", callback_data="admin_panel")]
+                                         ]))
+    kb = [[InlineKeyboardButton(
+        text=f"♻️ #{r['id']} {r['name']} ({r['price']}€ / stock {r['stock']})",
+        callback_data=f"reactp:{r['id']}")] for r in rows]
+    kb.append([InlineKeyboardButton(text="⬅️ Retour", callback_data="admin_panel")])
+    await c.message.edit_text("♻️ Réactiver quel produit ?", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+@dp.callback_query(F.data.startswith("reactp:"))
+async def admin_reactivate_product_confirm(c: CallbackQuery):
+    if not is_admin(c.from_user.id):
+        return await c.answer("⛔", show_alert=True)
+    pid = int(c.data.split(":")[1])
+    prod = get_product(pid)
+    if not prod:
+        return await c.answer("Produit introuvable", show_alert=True)
+    reactivate_product(pid)
+    await c.message.edit_text(f"✅ Produit réactivé : <b>{prod['name']}</b>",
+                              reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                  [InlineKeyboardButton(text="⬅️ Retour Admin", callback_data="admin_panel")]
+                              ]))
+
+# ---------- Admin Ops: assign / delivered ----------
+def mark_order_delivered(code: str) -> Optional[int]:
     with closing(db()) as conn:
-        cur = conn.execute("SELECT * FROM orders WHERE status IN ('pending','assigned','out_for_delivery') ORDER BY id DESC")
-        return cur.fetchall()
+        order = conn.execute("SELECT * FROM orders WHERE code=? AND status!='delivered'", (code,)).fetchone()
+        if not order:
+            return None
+        items = json.loads(order["items_json"] or "[]")
+        for it in items:
+            conn.execute("UPDATE products SET stock=stock-? WHERE id=?", (int(it["qty"]), int(it["id"])))
+        conn.execute("UPDATE orders SET status='delivered', delivered_at=? WHERE id=?",
+                     (datetime.utcnow().isoformat(), order["id"]))
+        conn.execute("INSERT INTO treasury(order_id,entry_type,amount,created_at) VALUES(?,?,?,?)",
+                     (order["id"], "sale", float(order["total"]), datetime.utcnow().isoformat()))
+        conn.commit()
+        return order["id"]
 
 def set_order_assigned(order_code: str, courier_user_id: int):
     with closing(db()) as conn:
@@ -784,27 +987,9 @@ def set_order_assigned(order_code: str, courier_user_id: int):
                      (courier_user_id, order_code))
         conn.commit()
 
-def mark_order_delivered(order_code: str) -> Optional[int]:
-    """Mark delivered; deduct stock; insert treasury sale. Returns order id or None."""
-    with closing(db()) as conn:
-        cur = conn.execute("SELECT * FROM orders WHERE code=? AND status != 'delivered'", (order_code,))
-        order = cur.fetchone()
-        if not order:
-            return None
-        items = json.loads(order["items_json"]) or []
-        for it in items:
-            conn.execute("UPDATE products SET stock=stock-? WHERE id=?",
-                         (int(it["qty"]), int(it["id"])))
-        conn.execute("UPDATE orders SET status='delivered', delivered_at=? WHERE id=?",
-                     (datetime.utcnow().isoformat(), order["id"]))
-        conn.execute("INSERT INTO treasury(order_id, entry_type, amount, created_at) VALUES(?,?,?,?)",
-                     (order["id"], "sale", float(order["total"]), datetime.utcnow().isoformat()))
-        conn.commit()
-        return order["id"]
-
 @dp.message(Command("assign"))
 async def cmd_assign(m: Message):
-    if get_role(m.from_user.id) != "admin":
+    if not is_admin(m.from_user.id):
         return await m.answer("⛔ Admin uniquement.")
     try:
         _, code, courier_id = m.text.split()
@@ -815,7 +1000,7 @@ async def cmd_assign(m: Message):
 
 @dp.message(Command("delivered"))
 async def cmd_delivered(m: Message):
-    if get_role(m.from_user.id) not in ("admin", "staff"):
+    if not is_staff(m.from_user.id):
         return await m.answer("⛔")
     try:
         _, code = m.text.split()
@@ -826,33 +1011,29 @@ async def cmd_delivered(m: Message):
     except Exception:
         await m.answer("Format: /delivered CODE")
 
-# ---------- Export CA (CSV + PDF) ----------
-def export_ca_files(period_days: int = 30) -> Tuple[str, str]:
+# ---------- Export CA ----------
+def export_ca_files(period_days: int = 30):
     since = datetime.utcnow() - timedelta(days=period_days)
     with closing(db()) as conn:
-        cur = conn.execute(
+        rows = conn.execute(
             "SELECT id, code, total, discount, delivery_fee, created_at, delivered_at, status "
             "FROM orders WHERE created_at >= ? ORDER BY id",
-            (since.isoformat(),),
-        )
-        rows = cur.fetchall()
+            (since.isoformat(),)
+        ).fetchall()
 
-    # CSV
-    csv_buf_path = "ca_export.csv"
-    with open(csv_buf_path, "w", newline="", encoding="utf-8") as f:
+    csv_path = "ca_export.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["order_id", "code", "status", "total", "discount", "delivery_fee", "created_at", "delivered_at"])
         for r in rows:
             w.writerow([r["id"], r["code"], r["status"], f"{r['total']:.2f}", f"{r['discount']:.2f}",
                         f"{r['delivery_fee']:.2f}", r["created_at"], r["delivered_at"] or ""])
 
-    # PDF (simple table)
-    pdf_buf_path = "ca_export.pdf"
-    c = pdf_canvas.Canvas(pdf_buf_path, pagesize=A4)
+    pdf_path = "ca_export.pdf"
+    c = pdf_canvas.Canvas(pdf_path, pagesize=A4)
     width, height = A4
     c.setFont("Helvetica-Bold", 14)
     c.drawString(2 * cm, height - 2 * cm, "Export Chiffre d'Affaires (30 jours)")
-
     y = height - 3 * cm
     c.setFont("Helvetica", 9)
     headers = ["Code", "Statut", "Total€", "Réduc€", "Livraison€", "Créée", "Livrée"]
@@ -860,7 +1041,6 @@ def export_ca_files(period_days: int = 30) -> Tuple[str, str]:
     for i, htxt in enumerate(headers):
         c.drawString(col_x[i], y, htxt)
     y -= 0.7 * cm
-
     sum_total = 0.0
     for r in rows:
         if y < 2 * cm:
@@ -875,22 +1055,20 @@ def export_ca_files(period_days: int = 30) -> Tuple[str, str]:
         c.drawString(col_x[6], y, (r["delivered_at"] or "").split("T")[0])
         y -= 0.6 * cm
         sum_total += float(r["total"])
-
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(2 * cm, y - 0.5 * cm, f"Total HT approximatif: {sum_total:.2f}€ (cash)")
+    c.drawString(2 * cm, y - 0.5 * cm, f"Total (cash): {sum_total:.2f}€")
     c.save()
-
-    return csv_buf_path, pdf_buf_path
+    return csv_path, pdf_path
 
 # ---------- Startup ----------
 async def on_startup():
-    print("Booting bot…", flush=True)
+    print(f"Booting bot… OWNER_ID={OWNER_ID}", flush=True)
     init_db()
-    # Seed demo products if empty
-    if not list_products():
+    # Seed de démo si vide
+    if not list_active_products():
         add_product("Bouteille 1.0L", 2.50, 50)
         add_product("Pack 6x0.5L", 6.90, 30)
-        add_product("Pod arôme citron", 3.20, 100)
+        add_product("Pod citron", 3.20, 100)
 
 async def main():
     await on_startup()
