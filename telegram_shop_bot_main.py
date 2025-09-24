@@ -657,11 +657,11 @@ if (delivered_count + 1) % 10 == 0:
     discount += 10.0
     loyalty_msg = "🎉 Fidélité: -10€ sur votre 10e commande !"
 
-delivery_fee = compute_delivery_fee(city, distance_km)
-total = max(0.0, subtotal - discount) + delivery_fee
+        delivery_fee = compute_delivery_fee(city, distance_km)
+        total = max(0.0, subtotal - discount) + delivery_fee
 
-code = gen_code()
-with closing(db()) as conn:
+        code = gen_code()
+        with closing(db()) as conn:
             conn.execute(
                 "INSERT INTO orders(code,user_id,items_json,subtotal,discount,delivery_fee,total,address,city,distance_km,status,courier_user_id,created_at)"
                 " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -671,18 +671,22 @@ with closing(db()) as conn:
             conn.commit()
 
         if COURIER_CHANNEL_ID:
-            txt = f"📦 Nouvelle commande <b>{code}</b>\nArticles:" + "".join(
-                f"\n• {it['name']} x{it['qty']}" for it in items
+            txt = f"🆕 Nouvelle commande <b>{code}</b>\nArticles: " + "".join(
+                f"\n - {it['name']} x{it['qty']}" for it in items
             )
             txt += (f"\n\nLivraison: {city}, {distance_km:.1f} km\n"
-                    f"Adresse: {address}\nPaiement: <b>Espèces</b>\n"
+                    f"Adresse: {address}\nPaiement: 💵 Espèces\n"
                     f"Total à encaisser: <b>{total:.2f}€</b>\n(Client anonyme)")
             await bot.send_message(COURIER_CHANNEL_ID, txt)
 
         await m.answer(
             "✅ Commande enregistrée via la mini-app !\n"
-            f"Code: <b>{code}</b>\nTotal: <b>{total:.2f}€</b>\nPréparez l’appoint en espèces."
+            f"Code: <b>{code}</b>\n"
+            f"Total: <b>{total:.2f}€</b>\n"
+            + (loyalty_msg + "\n" if loyalty_msg else "") +
+            "Préparez l’appoint en espèces."
         )
+
     except ValueError as e:
         await m.answer(str(e))
     except Exception as e:
