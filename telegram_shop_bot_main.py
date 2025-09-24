@@ -660,8 +660,8 @@ if (delivered_count + 1) % 10 == 0:
 delivery_fee = compute_delivery_fee(city, distance_km)
 total = max(0.0, subtotal - discount) + delivery_fee
 
-        code = gen_code()
-        with closing(db()) as conn:
+code = gen_code()
+with closing(db()) as conn:
             conn.execute(
                 "INSERT INTO orders(code,user_id,items_json,subtotal,discount,delivery_fee,total,address,city,distance_km,status,courier_user_id,created_at)"
                 " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
