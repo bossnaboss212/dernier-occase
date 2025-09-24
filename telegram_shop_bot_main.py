@@ -643,23 +643,22 @@ async def handle_webapp(m: Message):
     except Exception as e:
         await m.answer(f"⚠️ Erreur lors du checkout : {e}")
 
-# (B) Fidélité : -10€ sur la 10ᵉ commande seulement
-# On compte les commandes DÉJÀ livrées. Si 9 sont livrées, celle-ci est la 10ᵉ.
-with closing(db()) as conn:
-    cur = conn.execute(
-        "SELECT COUNT(*) FROM orders WHERE user_id=? AND status='delivered'",
-        (m.from_user.id,)
-    )
-    delivered_count = cur.fetchone()[0]
+        # (B) Fidélité : -10€ sur la 10e commande seulement
+        # On compte les commandes DÉJÀ livrées. Si 9 sont livrées, celle-ci est la 10e.
+        with closing(db()) as conn:
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE user_id=? AND status='delivered'",
+                (m.from_user.id,)
+            )
+            delivered_count = cur.fetchone()[0]
 
-loyalty_msg = ""
-            if (delivered_count + 1) % 10 == 0:
-                discount += 10.0
-                loyalty_msg = "🎉 Fidélité: -10€ sur votre 10e commande !"
+        loyalty_msg = ""
+        if (delivered_count + 1) % 10 == 0:
+            discount += 10.0
+            loyalty_msg = "🎉 Fidélité: -10€ sur votre 10e commande !"
 
         delivery_fee = compute_delivery_fee(city, distance_km)
         total = max(0.0, subtotal - discount) + delivery_fee
-
 
         code = gen_code()
         with closing(db()) as conn:
