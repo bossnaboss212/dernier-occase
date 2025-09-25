@@ -37,27 +37,110 @@
   select{appearance:none;background:var(--panel-2);color:var(--txt);border:1px solid #2b364a;border-radius:12px;
     padding:12px 14px;font-size:14px}
 
-  /* Grid */
-.card{position:relative; overflow:hidden; border-radius:20px; background:var(--panel); border:1px solid #263144; cursor:pointer;}
-.media{position:relative;}
-.media .ph,
-.media .vid{display:block; width:100%; height:220px; object-fit:cover; background:#000;}
-
-.play{
-  position:absolute; left:50%; top:50%;
-  transform:translate(-50%,-50%);
-  width:64px; height:64px; border-radius:50%; border:0;
-  font-size:26px; line-height:64px; text-align:center;
-  background:rgba(0,0,0,.5); color:#fff; backdrop-filter: blur(2px);
+ /* === Grid (style vitrine) === */
+.grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+@media(min-width:780px){
+  .grid{grid-template-columns:repeat(3,minmax(0,1fr));}
 }
 
-@media (min-width:780px){
-  .media .ph, .media .vid{height:260px;}
+/* Carte produit */
+.card{
+  position:relative;
+  overflow:hidden;
+  border-radius:22px;
+  background:var(--panel);
+  border:1px solid #263144;
+  cursor:pointer;
+  box-shadow:0 8px 20px rgba(0,0,0,.35);
 }
-  .chip{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.55);color:#fff;padding:8px 10px;border-radius:999px;font-weight:700}
-  .name{position:absolute;left:12px;right:12px;bottom:10px;background:linear-gradient(to top,rgba(0,0,0,.65),rgba(0,0,0,0));
-    color:#fff;font-weight:800;font-size:20px;padding:34px 10px 8px;border-radius:14px}
 
+- /* Media commun (image OU vidéo) */
+- .card .media{
+-   width:100%;
+-   aspect-ratio:3 / 4;        /* format affiché */
+-   object-fit:cover;
+-   display:block;
+- }
++/* Media (image OU vidéo) */
++.media{ position:relative; }
++.media .ph,
++.media .vid{
++  display:block;
++  width:100%;
++  height:180px;          /* hauteur vignette (petit écran) */
++  object-fit:cover;
++  background:#000;
++  border-radius:16px;
++}
++@media (min-width:780px){
++  .media .ph,
++  .media .vid{ height:220px; }   /* hauteur vignette (desktop) */
++}
+/* Étiquette catégorie (ex: Cookie 🍪) */
+.chip {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  background: rgba(0, 0, 0, .55);
+  color: #fff;
+  padding: 8px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+/* Nom du produit (ex: White Runtz) */
+.name {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  background: linear-gradient(to top, rgba(0,0,0,.65), rgba(0,0,0,0));
+  color: #fff;
+  font-weight: 800;
+  font-size: 20px;
+  padding: 34px 10px 8px;
+  border-radius: 14px;
+}
+
+/* Dégradé bas pour le titre */
+.card::after{
+  content:"";
+  position:absolute;
+  left:0; right:0; bottom:0;
+  height:42%;
+  background:linear-gradient(180deg, transparent 0%, rgba(0,0,0,.65) 70%);
+  pointer-events:none;
+}
+
+/* Badge en haut */
+.chip{
+  position:absolute;
+  left:16px; top:12px;
+  background:rgba(0,0,0,.45);
+  color:#fff;
+  padding:10px 14px;
+  border-radius:22px;
+  font-weight:700;
+  font-size:18px;
+  backdrop-filter: blur(3px);
+}
+
+/* Nom produit en bas */
+.name{
+  position:absolute;
+  left:16px; right:16px; bottom:14px;
+  color:#fff;
+  font-weight:800;
+  font-size:24px;
+  line-height:1.15;
+  text-shadow:0 2px 12px rgba(0,0,0,.6);
+}
+  
   /* Product sheet / variants */
   dialog{border:none;border-radius:22px;background:var(--panel);color:var(--txt);max-width:520px;width:92%;box-shadow:var(--shadow)}
   dialog::backdrop{background:rgba(0,0,0,.55)}
@@ -98,6 +181,124 @@
   .note{background:#12202a;border:1px solid #134; color:#aee; padding:8px 12px;border-radius:12px;font-size:13px}
 
   .hidden{display:none !important}
+  /* --- Media produits (image + vidéo) --- */
+.card img.product-img,
+.card video.product-video{
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  object-fit: cover;
+}
+
+.card video.product-video{
+  max-height: 220px; /* garde la vignette vidéo à une belle hauteur */
+}
+
+  /* === Fiche produit (sheet) === */
+#sheetMedia img,
+#sheetMedia video {
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  object-fit: cover;
+  max-height: 400px; /* limite la taille comme ton exemple */
+}
+
+  /* === Apparence du dialog (fiche produit) === */
+dialog#sheet {
+  border: none;
+  border-radius: 20px;
+  padding: 0;
+  max-width: 420px;
+  width: 90%;
+  background: #fff;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+}
+
+/* Fond sombre derrière le dialog */
+dialog#sheet::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+/* Contenu de la fiche */
+.sheet {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Media (image / vidéo) */
+#sheetMedia img,
+#sheetMedia video {
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  object-fit: cover;
+  max-height: 400px;
+}
+
+  /* === Boutons de variantes (poids/prix) === */
+.variants {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.variants button {
+  background: #111;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s;
+}
+
+.variants button:hover {
+  background: #222;
+  transform: scale(1.03);
+}
+
+.variants button:active {
+  background: #333;
+  transform: scale(0.98);
+}
+
+  /* === Bouton Fermer fiche produit === */
+.close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+  z-index: 20;
+}
+
+.close-btn:hover {
+  background: rgba(0,0,0,0.9);
+  transform: scale(1.05);
+}
+
+.close-btn:active {
+  transform: scale(0.9);
+}
+
 </style>
 </head>
 <body>
@@ -175,9 +376,9 @@ const PRODUCTS = [
     id: 1,
     name: "Amnesia",
     farm: "coffee shop",
-    category: "🌿 weed",
-    pic: "img/AMNESIA.JPG",
-    video: "video/AMNESIA.MP4",
+    category: "weed",
+    pic: "img/amnesia.JPG",
+    video: "video/amnesia.MP4",
     variants: [
       {label:"3,33G", grams:3.33, price:20},
       {label:"5G", grams:5, price:30},
@@ -190,9 +391,9 @@ const PRODUCTS = [
     id: 2,
     name: "Needles",
     farm: "Selection",
-    category: "☁️ kéta",
-    pic: "img/NEEDLES.JPG",
-    video: "video/NEEDLES.MP4",
+    category: "kéta",
+    pic: "img/needles.JPG",
+    video: "video/needles.MP4",
     variants: [
       {label:"1G", grams:1, price:20},
       {label:"2G", grams:2, price:40},
@@ -206,7 +407,7 @@ const PRODUCTS = [
     name: "Champagne",
     farm: "Selection",
     category: "🌈 mdma",
-    video: "video/CHAMPAGNE.MP4",
+    video: "video/CHAMPGNE.MP4",
     variants: [
       {label:"1G", grams:1, price:20},
       {label:"2G", grams:2, price:40},
@@ -262,7 +463,7 @@ const PRODUCTS = [
     name: "Dembele",
     farm: "morroco",
     category: "🧽 mousseux",
-    video: "video/debele.MP4",
+    video: "video/dembele.MP4",
     variants: [
       {label:"3,5G", grams:3.5, price:20},
       {label:"5G", grams:5, price:30},
@@ -276,7 +477,7 @@ const PRODUCTS = [
     name: "Lemon x Gelato",
     farm: "top shelf",
     category: "🇺🇸 cali us",
-    video: "video/LEMON_X_GELATO.MP4",
+    video: "video/LEMONXGELATO.MP4",
     variants: [
       {label:"1,66G", grams:1.66, price:20},
       {label:"3,5G", grams:3.5, price:40},
@@ -289,7 +490,7 @@ const PRODUCTS = [
     name: "Georgia Pie",
     farm: "top shelf",
     category: "🇺🇸 cali us",
-    video: "video/GEORGIA_PIE.MP4",
+    video: "video/GEOGIA_PIE.MP4",
     variants: [
       {label:"1,66G", grams:1.66, price:20},
       {label:"3,5G", grams:3.5, price:40},
@@ -364,52 +565,92 @@ const elCheckout = document.getElementById("checkoutBtn");
 elCat.onchange = ()=>{ state.filterCat = elCat.value; renderGrid(); };
 elFarm.onchange = ()=>{ state.filterFarm = elFarm.value; renderGrid(); };
 
-/* --------------- Render grid --------------- */
-function renderGrid(){
-  let list = PRODUCTS.slice();
-
-  // filtres
-  if (state.filterCat)  list = list.filter(p => p.category === state.filterCat);
-  if (state.filterFarm) list = list.filter(p => p.farm === state.filterFarm);
-
+/* ================ Render grid ================ */
+function renderGrid(list) {
   elGrid.innerHTML = "";
   list.forEach(p => {
     const card = document.createElement("div");
     card.className = "card";
 
-    // media: vidéo si p.vid existe, sinon image
-    const isVideo = Boolean(p.vid);
-    const media = document.createElement(isVideo ? "video" : "img");
-    media.className = isVideo ? "vid" : "pic";
-
-    if (isVideo) {
-      media.src = p.vid;
-      if (p.pic) media.poster = p.pic;     // vignette si dispo
-      media.muted = true;
-      media.loop = true;
-      media.playsInline = true;
-      media.preload = "metadata";
-      // pas d'autoplay pour éviter les blocages iOS/Android
-    } else {
-      media.src = p.pic;
-      media.loading = "lazy";
-      media.alt = p.name || "";
+    // Ajout de la photo si elle existe
+    if (p.pic) {
+      const img = document.createElement("img");
+      img.src = p.pic;
+      img.alt = p.name;
+      img.className = "product-img";
+      card.appendChild(img);
     }
 
-    card.appendChild(media);
+    // Ajout de la vidéo si elle existe
+    if (p.video) {
+      const video = document.createElement("video");
+      video.src = p.video;
+      video.autoplay = true;
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.controls = false;
+      video.className = "product-video";
+      card.appendChild(video);
+    }
 
-    // libellés
-    card.insertAdjacentHTML(
-      "beforeend",
-      `
-      <div class="chip">${p.farm || ""}</div>
-      <div class="name">${p.name || ""}</div>
-      `
-    );
+    // Infos produit (nom + ferme)
+    const title = document.createElement("h3");
+    title.textContent = p.name;
+    card.appendChild(title);
 
-    card.onclick = () => openSheet(p);
+    const farm = document.createElement("p");
+    farm.textContent = p.farm || "";
+    card.appendChild(farm);
+
+    // Boutons des variantes
+    const variantBox = document.createElement("div");
+    variantBox.className = "variants";
+    p.variants.forEach(v => {
+      const btn = document.createElement("button");
+      btn.textContent = `${v.label} - ${v.price}€`;
+      btn.onclick = () => addToCart(p.id, v.label);
+      variantBox.appendChild(btn);
+    });
+    card.appendChild(variantBox);
+
+    // 👉 Quand on clique sur la carte : ouvrir la fiche produit
+    card.onclick = () => openProduct(p);
+
     elGrid.appendChild(card);
   });
+}
+  
+// Ouvrir la fiche produit
+function openProduct(p) {
+  const sheet = document.getElementById("sheet");
+
+  // Remplir l'image ou la vidéo
+  const mediaBox = document.getElementById("sheetMedia");
+  mediaBox.innerHTML = "";
+  if (p.pic) {
+    mediaBox.innerHTML = `<img src="${p.pic}" alt="${p.name}" />`;
+  }
+  if (p.video) {
+    mediaBox.innerHTML = `<video src="${p.video}" autoplay muted loop playsinline></video>`;
+  }
+
+  // Nom + ferme
+  document.getElementById("sheetTitle").textContent = p.name;
+  document.getElementById("sheetFarm").textContent = p.farm || "";
+
+  // Variantes
+  const variantsBox = document.getElementById("sheetVariants");
+  variantsBox.innerHTML = "";
+  p.variants.forEach(v => {
+    const btn = document.createElement("button");
+    btn.textContent = `${v.label} - ${v.price}€`;
+    btn.onclick = () => addToCart(p.id, v.label);
+    variantsBox.appendChild(btn);
+  });
+
+  // Ouvrir le dialog
+  sheet.showModal();
 }
 
 /* --------------- Product sheet --------------- */
